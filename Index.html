@@ -17,20 +17,20 @@
         border-radius: 10px; 
         padding: 15px; 
         box-shadow: 0 2px 10px rgba(0,0,0,0.05); 
-        overflow: hidden; /* Wrapper utama */
+        overflow: hidden;
     }
 
     .table-responsive {
-        max-height: 70vh; /* Scroll Vertikal */
-        overflow-x: auto; /* Scroll Horizontal */
+        max-height: 70vh; 
+        overflow-x: auto; 
         position: relative;
     }
 
-    /* TABLE HEADER STICKY */
+    /* TABLE HEADER STICKY (ATAS) */
     thead th { 
       background-color: #212529 !important; 
       color: white !important; 
-      white-space: nowrap; /* Header jangan wrap */
+      white-space: nowrap; 
       text-align: center;
       vertical-align: middle;
       position: sticky; 
@@ -41,32 +41,47 @@
 
     /* TABLE BODY */
     tbody td {
-      white-space: nowrap; /* KUNCI: Nama tidak akan turun baris */
+      white-space: nowrap; 
       vertical-align: middle;
       padding: 8px 10px;
+      background-color: #fff; /* Pastikan sel biasa berwarna putih */
     }
     
-    /* NAMA SISWA (Kolom 2) STICKY DI KIRI (Opsional, biar enak dilihat di HP) */
-    /* Hapus blok ini jika tidak ingin nama sticky */
-    tbody td:nth-child(2), thead th:nth-child(2) {
+    /* --- PERBAIKAN 1: KOLOM NAMA STICKY AGAR TIDAK BERTUMPUK/TRANSPARAN --- */
+    
+    /* 1. Atur Kolom Nama (Body) */
+    tbody td:nth-child(2) {
         position: sticky;
         left: 0;
-        z-index: 11; /* Di atas data lain */
-        background-color: inherit; /* Ikuti warna baris */
+        z-index: 11; 
+        background-color: #fff; /* WAJIB WARNA SOLID (Putih), jangan inherit */
+        border-right: 2px solid #dee2e6; /* Batas kanan agar terlihat pemisahnya */
+        box-shadow: 2px 0 5px rgba(0,0,0,0.05); /* Bayangan halus */
     }
-    thead th:nth-child(2) { z-index: 12; background-color: #212529 !important; } /* Header nama */
+
+    /* 2. Atur Kolom Nama (Header) */
+    thead th:nth-child(2) { 
+        position: sticky;
+        left: 0;
+        z-index: 12; /* Harus lebih tinggi dari body */
+        background-color: #212529 !important; 
+        border-right: 2px solid #495057;
+    }
+
+    /* 3. Perbaikan Efek Hover pada Kolom Sticky */
+    /* Saat baris disorot, kolom sticky juga harus berubah warna, kalau tidak dia tetap putih */
+    tbody tr:hover td {
+        background-color: #e2e6ea !important;
+    }
+    tbody tr:hover td:nth-child(2) {
+        background-color: #e2e6ea !important; /* Paksa warna hover sama */
+    }
 
     /* UKURAN KOLOM MAPEL & NILAI SERAGAM */
-    /* Target kolom ke-5 dst (Nilai Mapel) */
     th:nth-child(n+5), td:nth-child(n+5) {
        min-width: 60px;
        max-width: 60px;
        text-align: center;
-    }
-    
-    /* Highlight Baris saat Hover */
-    tbody tr:hover td {
-        background-color: #e2e6ea !important; /* Warna hover */
     }
 
     /* Pagination Controls */
@@ -77,19 +92,32 @@
         margin-top: 15px;
         padding-top: 10px;
         border-top: 1px solid #dee2e6;
+        flex-wrap: wrap; /* Agar responsif */
+        gap: 10px;
+    }
+
+    /* --- PERBAIKAN 2: PAGINASI SATU BARIS --- */
+    #current-page-label {
+        white-space: nowrap !important; /* Mencegah teks turun baris */
+        display: inline-block;
+        min-width: 60px;
+        text-align: center;
+        font-weight: bold;
     }
 
     .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; display: none; justify-content: center; align-items: center; }
 
     /* Class untuk kolom yang menyesuaikan lebar konten (Auto-fit) */
     .col-fit {
-        width: 1%;                 /* Trik agar kolom menyusut sekecil kontennya */
-        white-space: nowrap;       /* Mencegah teks turun baris (wrapping) */
-        min-width: auto !important; /* Override aturan min-width 60px sebelumnya */
-        max-width: none !important; /* Override aturan max-width 60px sebelumnya */
+        width: 1%;                 
+        white-space: nowrap;       
+        min-width: auto !important; 
+        max-width: none !important; 
         padding-left: 15px !important;
         padding-right: 15px !important;
     }
+
+    .d-none { display: none !important; }
   </style>
 </head>
 <body>
@@ -612,9 +640,37 @@
     }
   }
 
+  // Ganti "https://..." di bawah ini dengan URL Web App (Exec) Aplikasi 1 Anda yang sebenarnya
+  const URL_APLIKASI_1 = "https://script.google.com/macros/s/AKfycbynRR8fqaFQTVM4QEonhZLMP_Ee_W3DjMHnLBZ8ZuCbRjv_45Mq9iXPfRVL_M-LvNeK/exec"; 
+
   function logout() {
-    location.reload();
+    // Redirect kembali ke Aplikasi 1
+    window.top.location.href = URL_APLIKASI_1;
   }
+
+  // --- TAMBAHAN BARU: Auto-Login dari URL ---
+  // Fungsi ini akan dijalankan otomatis saat halaman Arsip selesai dimuat
+  document.addEventListener('DOMContentLoaded', function() {
+      
+    // Google Apps Script menggunakan google.script.url untuk membaca parameter URL dengan aman
+    google.script.url.getLocation(function(location) {
+      // Cek apakah ada parameter 'npsn' di URL
+      if (location.parameter && location.parameter.npsn) {
+        const npsnDariUrl = location.parameter.npsn;
+        
+        // Isi kolom input secara otomatis
+        document.getElementById('input-npsn').value = npsnDariUrl;
+        
+        // Panggil fungsi login secara otomatis
+        // Kita buat event palsu karena handleLogin mengharapkan event (e)
+        const fakeEvent = { preventDefault: function() {} };
+        handleLogin(fakeEvent);
+        
+        console.log("Auto-login mendeteksi NPSN: " + npsnDariUrl);
+      }
+    });
+    
+  });
 </script>
 </body>
 </html>

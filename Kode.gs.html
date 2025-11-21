@@ -1,0 +1,83 @@
+const ID_MASTER_SHEET_APP_1 = "191TzI0vRzK8xg7kGym8qUnvXz_edlCH_IJmmwMZMK_M"; // ID Master Sheet Anda
+
+function doGet(e) {
+  return HtmlService.createTemplateFromFile('Index')
+    .evaluate()
+    .setTitle('Arsip Nilai Sekolah')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+}
+
+function loginArsip(npsn) {
+  try {
+    if (!npsn) throw new Error("NPSN wajib diisi.");
+    
+    const masterSS = SpreadsheetApp.openById(ID_MASTER_SHEET_APP_1);
+    const sheetSekolah = masterSS.getSheetByName('Sheet_Sekolah');
+    // Ambil kolom A (ID), B (Nama), H (NPSN), V (Arsip_DB_ID)
+    // Hati-hati dengan index: A=0, B=1, H=7, V=21
+    const data = sheetSekolah.getDataRange().getValues();
+    
+    let sekolahInfo = null;
+    
+    for (let i = 1; i < data.length; i++) {
+      // Cek NPSN (Kolom H / Index 7). Pastikan string comparison.
+      if (String(data[i][7]).trim() === String(npsn).trim()) {
+        sekolahInfo = {
+          namaSekolah: data[i][1],
+          arsipDbId: data[i][21] // Kolom V
+        };
+        break;
+      }
+    }
+    
+    if (!sekolahInfo) {
+      throw new Error("NPSN tidak ditemukan.");
+    }
+    if (!sekolahInfo.arsipDbId) {
+      throw new Error("Sekolah ini belum memiliki Arsip Nilai (Belum pernah melakukan tutup tahun ajaran).");
+    }
+    
+    return { success: true, data: sekolahInfo };
+    
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function getArsipYears(arsipDbId) {
+  try {
+    const ss = SpreadsheetApp.openById(arsipDbId);
+    const sheets = ss.getSheets();
+    const years = [];
+    
+    sheets.forEach(sheet => {
+      const name = sheet.getName();
+      // Ambil sheet yang diawali "Arsip "
+      if (name.startsWith("Arsip ")) {
+        years.push(name);
+      }
+    });
+    
+    // Urutkan tahun terbaru
+    years.sort().reverse();
+    return { success: true, years: years };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function getArsipData(arsipDbId, sheetName) {
+  try {
+    const ss = SpreadsheetApp.openById(arsipDbId);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) throw new Error("Data tahun tersebut tidak ditemukan.");
+    
+    const data = sheet.getDataRange().getDisplayValues(); // Ambil sebagai string tampilan
+    const headers = data.shift(); // Baris pertama
+    
+    return { success: true, headers: headers, rows: data };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}

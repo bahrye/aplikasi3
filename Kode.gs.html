@@ -81,3 +81,123 @@ function getArsipData(arsipDbId, sheetName) {
     return { success: false, message: e.message };
   }
 }
+
+function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
+  try {
+    const ss = SpreadsheetApp.openById(arsipDbId);
+    const allSheets = ss.getSheets();
+    const arsipSheets = [];
+    
+    // 1. Kumpulkan semua sheet Arsip
+    allSheets.forEach(s => {
+      const name = s.getName();
+      if (name.startsWith("Arsip ")) {
+         arsipSheets.push(name);
+      }
+    });
+    arsipSheets.sort(); // Urutkan secara kronologis (misal: 2023-2024, 2024-2025)
+    
+    // 2. Filter sheet berdasarkan range
+    const startIndex = arsipSheets.indexOf(startSheet);
+    const endIndex = arsipSheets.indexOf(endSheet);
+    
+    if (startIndex === -1 || endIndex === -1) throw new Error("Tahun awal atau akhir tidak valid.");
+    
+    // Pastikan start <= end, jika terbalik kita tukar
+    const start = Math.min(startIndex, endIndex);
+    const end = Math.max(startIndex, endIndex);
+    const targetSheets = arsipSheets.slice(start, end + 1);
+    
+    const suffix = "_" + jenisNilai; // Contoh: _Ijazah, _Ujian, _Rapor
+    const rowsResult = [];
+    const allMapels = new Set();
+    
+    // 3. Loop setiap sheet untuk agregasi data
+    targetSheets.forEach(sheetName => {
+       const sheet = ss.getSheetByName(sheetName);
+       const data = sheet.getDataRange().getValues();
+       if (data.length <= 1) return; // Skip jika kosong
+
+       const headers = data.shift(); // Baris 1
+       
+       // Identifikasi index kolom mapel yang relevan
+       const mapelIndices = {}; 
+       headers.forEach((h, i) => {
+         if (h.endsWith(suffix)) {
+           const mapel = h.replace(suffix, '');
+           // Abaikan kolom 'Jumlah' dan 'Rata' bawaan, kita hitung ulang agar akurat
+           if (mapel !== 'Jumlah' && mapel !== 'Rata') {
+             mapelIndices[mapel] = i;
+             allMapels.add(mapel);
+           }
+         }
+       });
+       
+       // Hitung Rata-rata per Mapel untuk tahun ini
+       const sums = {};
+       const counts = {};
+       let studentCount = 0;
+       
+       data.forEach(row => {
+         studentCount++;
+         for (const [m, idx] of Object.entries(mapelIndices)) {
+            const val = row[idx];
+            // Pastikan nilai adalah angka valid
+            if (val !== "" && val !== null && !isNaN(val)) {
+               sums[m] = (sums[m] || 0) + Number(val);
+               counts[m] = (counts[m] || 0) + 1;
+            }
+         }
+       });
+       
+       // Buat baris data untuk tahun ini
+       const rowData = {
+         'Tahun Pelajaran': sheetName.replace('Arsip ', ''),
+         '_meta_student_count': studentCount
+       };
+       
+       let totalAvgSum = 0;
+       let mapelCount = 0;
+       
+       // Isi nilai rata-rata per mapel
+       // Kita iterate 'allMapels' nanti saat render agar konsisten, 
+       // tapi di sini kita simpan dulu hasil hitungannya
+       for (const [m, sum] of Object.entries(sums)) {
+          const count = counts[m] || 0;
+          if (count > 0) {
+             const avg = sum / count;
+             rowData[m] = avg;
+             
+             totalAvgSum += avg;
+             mapelCount++;
+          }
+       }
+       
+       // Hitung Jumlah & Rata-rata Horizontal (Rata-rata dari Rata-rata Mapel)
+       rowData['Jumlah'] = totalAvgSum;
+       rowData['Rata-Rata'] = mapelCount > 0 ? (totalAvgSum / mapelCount) : 0;
+       
+       rowsResult.push(rowData);
+    });
+    
+    // 4. Konstruksi Header & Rows Final
+    const sortedMapels = Array.from(allMapels).sort();
+    const finalHeaders = ['Tahun Pelajaran', ...sortedMapels, 'Jumlah', 'Rata-Rata'];
+    
+    const finalRows = rowsResult.map(r => {
+       return finalHeaders.map(h => {
+          const val = r[h];
+          if (typeof val === 'number') {
+             // Format 2 desimal agar rapi
+             return val.toFixed(2);
+          }
+          return val || ''; // Kosong jika mapel tdk ada di tahun tsb
+       });
+    });
+    
+    return { success: true, headers: finalHeaders, rows: finalRows };
+    
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}

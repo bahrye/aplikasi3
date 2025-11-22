@@ -33,9 +33,16 @@
     .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
     .d-none { display: none !important; }
     
-    /* PDF AREA STYLE */
+    /* PDF AREA STYLE - DIPERBAIKI */
     #pdf-area { background-color: #e9ecef; padding: 30px; border-radius: 10px; text-align: center; border: 2px dashed #ced4da; margin-top: 20px; }
-    #pdf-area i { font-size: 4rem; color: #dc3545; margin-bottom: 15px; }
+    
+    /* HANYA ubah ikon utama PDF, jangan ikon tombol */
+    .pdf-main-icon { font-size: 4rem; color: #dc3545; margin-bottom: 15px; }
+    
+    /* Pastikan tombol download ukurannya pas */
+    #btn-download-pdf { font-weight: 600; font-size: 14px; }
+    #btn-download-pdf i { font-size: 14px; color: white; } /* Paksa ikon tombol putih */
+
   </style>
 </head>
 <body>
@@ -157,7 +164,7 @@
   </div>
 
   <div id="pdf-area" class="d-none">
-      <i class="fas fa-file-pdf"></i>
+      <i class="fas fa-file-pdf pdf-main-icon"></i>
       <h4>Cetak Laporan Nilai</h4>
       <p class="text-muted">Silakan pilih <strong>Tahun Arsip</strong> dan <strong>Mata Pelajaran</strong> di atas, lalu klik tombol di bawah.</p>
       <div class="mt-4">

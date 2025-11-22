@@ -1,4 +1,4 @@
-const ID_MASTER_SHEET_APP_1 = "191TzI0vRzK8xg7kGym8qUnvXz_edlCH_IJmmwMZMK_M"; // ID Master Sheet Anda
+const ID_MASTER_SHEET_APP_1 = "191TzI0vRzK8xg7kGym8qUnvXz_edlCH_IJmmwMZMK_M"; // Pastikan ID ini benar
 
 function doGet(e) {
   return HtmlService.createTemplateFromFile('Index')
@@ -15,29 +15,22 @@ function loginArsip(npsn) {
     
     const masterSS = SpreadsheetApp.openById(ID_MASTER_SHEET_APP_1);
     const sheetSekolah = masterSS.getSheetByName('Sheet_Sekolah');
-    // Ambil kolom A (ID), B (Nama), H (NPSN), V (Arsip_DB_ID)
-    // Hati-hati dengan index: A=0, B=1, H=7, V=21
     const data = sheetSekolah.getDataRange().getValues();
     
     let sekolahInfo = null;
     
     for (let i = 1; i < data.length; i++) {
-      // Cek NPSN (Kolom H / Index 7). Pastikan string comparison.
-      if (String(data[i][7]).trim() === String(npsn).trim()) {
+      if (String(data[i][7]).trim() === String(npsn).trim()) { // Kolom H = NPSN
         sekolahInfo = {
           namaSekolah: data[i][1],
-          arsipDbId: data[i][21] // Kolom V
+          arsipDbId: data[i][21] // Kolom V = Arsip_DB_ID
         };
         break;
       }
     }
     
-    if (!sekolahInfo) {
-      throw new Error("NPSN tidak ditemukan.");
-    }
-    if (!sekolahInfo.arsipDbId) {
-      throw new Error("Sekolah ini belum memiliki Arsip Nilai (Belum pernah melakukan tutup tahun ajaran).");
-    }
+    if (!sekolahInfo) throw new Error("NPSN tidak ditemukan.");
+    if (!sekolahInfo.arsipDbId) throw new Error("Sekolah ini belum memiliki Arsip Nilai.");
     
     return { success: true, data: sekolahInfo };
     
@@ -54,13 +47,10 @@ function getArsipYears(arsipDbId) {
     
     sheets.forEach(sheet => {
       const name = sheet.getName();
-      // Ambil sheet yang diawali "Arsip "
       if (name.startsWith("Arsip ")) {
         years.push(name);
       }
     });
-    
-    // Urutkan tahun terbaru
     years.sort().reverse();
     return { success: true, years: years };
   } catch (e) {
@@ -74,8 +64,8 @@ function getArsipData(arsipDbId, sheetName) {
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) throw new Error("Data tahun tersebut tidak ditemukan.");
     
-    const data = sheet.getDataRange().getDisplayValues(); // Ambil sebagai string tampilan
-    const headers = data.shift(); // Baris pertama
+    const data = sheet.getDataRange().getDisplayValues();
+    const headers = data.shift();
     
     return { success: true, headers: headers, rows: data };
   } catch (e) {
@@ -89,44 +79,35 @@ function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
     const allSheets = ss.getSheets();
     const arsipSheets = [];
     
-    // 1. Kumpulkan semua sheet Arsip
     allSheets.forEach(s => {
       const name = s.getName();
-      if (name.startsWith("Arsip ")) {
-         arsipSheets.push(name);
-      }
+      if (name.startsWith("Arsip ")) arsipSheets.push(name);
     });
-    arsipSheets.sort(); // Urutkan secara kronologis (misal: 2023-2024, 2024-2025)
+    arsipSheets.sort();
     
-    // 2. Filter sheet berdasarkan range
     const startIndex = arsipSheets.indexOf(startSheet);
     const endIndex = arsipSheets.indexOf(endSheet);
     
     if (startIndex === -1 || endIndex === -1) throw new Error("Tahun awal atau akhir tidak valid.");
     
-    // Pastikan start <= end, jika terbalik kita tukar
     const start = Math.min(startIndex, endIndex);
     const end = Math.max(startIndex, endIndex);
     const targetSheets = arsipSheets.slice(start, end + 1);
     
-    const suffix = "_" + jenisNilai; // Contoh: _Ijazah, _Ujian, _Rapor
+    const suffix = "_" + jenisNilai;
     const rowsResult = [];
     const allMapels = new Set();
     
-    // 3. Loop setiap sheet untuk agregasi data
     targetSheets.forEach(sheetName => {
        const sheet = ss.getSheetByName(sheetName);
        const data = sheet.getDataRange().getValues();
-       if (data.length <= 1) return; // Skip jika kosong
+       if (data.length <= 1) return;
 
-       const headers = data.shift(); // Baris 1
-       
-       // Identifikasi index kolom mapel yang relevan
+       const headers = data.shift();
        const mapelIndices = {}; 
        headers.forEach((h, i) => {
          if (h.endsWith(suffix)) {
            const mapel = h.replace(suffix, '');
-           // Abaikan kolom 'Jumlah' dan 'Rata' bawaan, kita hitung ulang agar akurat
            if (mapel !== 'Jumlah' && mapel !== 'Rata') {
              mapelIndices[mapel] = i;
              allMapels.add(mapel);
@@ -134,7 +115,6 @@ function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
          }
        });
        
-       // Hitung Rata-rata per Mapel untuk tahun ini
        const sums = {};
        const counts = {};
        let studentCount = 0;
@@ -143,7 +123,6 @@ function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
          studentCount++;
          for (const [m, idx] of Object.entries(mapelIndices)) {
             const val = row[idx];
-            // Pastikan nilai adalah angka valid
             if (val !== "" && val !== null && !isNaN(val)) {
                sums[m] = (sums[m] || 0) + Number(val);
                counts[m] = (counts[m] || 0) + 1;
@@ -151,7 +130,6 @@ function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
          }
        });
        
-       // Buat baris data untuk tahun ini
        const rowData = {
          'Tahun Pelajaran': sheetName.replace('Arsip ', ''),
          '_meta_student_count': studentCount
@@ -160,39 +138,29 @@ function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
        let totalAvgSum = 0;
        let mapelCount = 0;
        
-       // Isi nilai rata-rata per mapel
-       // Kita iterate 'allMapels' nanti saat render agar konsisten, 
-       // tapi di sini kita simpan dulu hasil hitungannya
        for (const [m, sum] of Object.entries(sums)) {
           const count = counts[m] || 0;
           if (count > 0) {
              const avg = sum / count;
              rowData[m] = avg;
-             
              totalAvgSum += avg;
              mapelCount++;
           }
        }
        
-       // Hitung Jumlah & Rata-rata Horizontal (Rata-rata dari Rata-rata Mapel)
        rowData['Jumlah'] = totalAvgSum;
        rowData['Rata-Rata'] = mapelCount > 0 ? (totalAvgSum / mapelCount) : 0;
-       
        rowsResult.push(rowData);
     });
     
-    // 4. Konstruksi Header & Rows Final
     const sortedMapels = Array.from(allMapels).sort();
     const finalHeaders = ['Tahun Pelajaran', ...sortedMapels, 'Jumlah', 'Rata-Rata'];
     
     const finalRows = rowsResult.map(r => {
        return finalHeaders.map(h => {
           const val = r[h];
-          if (typeof val === 'number') {
-             // Format 2 desimal agar rapi
-             return val.toFixed(2);
-          }
-          return val || ''; // Kosong jika mapel tdk ada di tahun tsb
+          if (typeof val === 'number') return val.toFixed(2);
+          return val || '';
        });
     });
     
@@ -201,4 +169,266 @@ function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
   } catch (e) {
     return { success: false, message: e.message };
   }
+}
+
+// --- FUNGSI BARU: FITUR PDF ARSIP ---
+
+/**
+ * Mengambil daftar Mata Pelajaran dari header sheet Arsip.
+ * Format header di arsip biasanya: "NAMAMAPEL_Ujian", "NAMAMAPEL_Rapor", dst.
+ */
+function getMapelListFromArsip(arsipDbId, sheetName) {
+  try {
+    const ss = SpreadsheetApp.openById(arsipDbId);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) throw new Error("Data tahun tersebut tidak ditemukan.");
+    
+    // Ambil header baris pertama
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const mapelSet = new Set();
+    
+    // Kolom-kolom standar yang harus diabaikan
+    const ignoreHeaders = [
+      'No', 'Nama Siswa', 'NISN', 'Kelas', 'Status', 
+      'Jumlah_Ujian', 'Jumlah_Rapor', 'Jumlah_Ijazah', 
+      'Rata_Ujian', 'Rata_Rapor', 'Rata_Ijazah'
+    ];
+    
+    headers.forEach(h => {
+      if (h && !ignoreHeaders.includes(h)) {
+        // Logika: Ambil string sebelum underscore terakhir
+        // Contoh: "BAHASA INDONESIA_Ujian" -> "BAHASA INDONESIA"
+        const lastUnderscore = h.lastIndexOf('_');
+        if (lastUnderscore > 0) {
+          const mapelName = h.substring(0, lastUnderscore);
+          // Validasi tambahan agar tidak mengambil sampah
+          if (mapelName.length > 1) {
+            mapelSet.add(mapelName);
+          }
+        }
+      }
+    });
+    
+    // Kembalikan array mapel yang sudah diurutkan
+    return { success: true, mapels: Array.from(mapelSet).sort() };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Mengambil daftar Kelas yang unik dari data Arsip.
+ * Digunakan untuk mengisi dropdown kelas di mode Cetak.
+ */
+function getClassListFromArsip(arsipDbId, sheetName) {
+  try {
+    const ss = SpreadsheetApp.openById(arsipDbId);
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) throw new Error("Data tahun tersebut tidak ditemukan.");
+    
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return { success: true, classes: [] };
+    
+    // Cari indeks kolom 'Kelas'
+    const headers = data[0];
+    const idxKelas = headers.indexOf('Kelas');
+    
+    if (idxKelas === -1) throw new Error("Kolom 'Kelas' tidak ditemukan di arsip.");
+    
+    const classSet = new Set();
+    // Loop data mulai baris ke-2
+    for (let i = 1; i < data.length; i++) {
+      const k = data[i][idxKelas];
+      if (k) classSet.add(k);
+    }
+    
+    return { success: true, classes: Array.from(classSet).sort() };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Generate PDF Laporan Nilai Siswa dari Arsip.
+ */
+function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
+  try {
+    // 1. Cari Data Sekolah di Master Sheet
+    const masterSS = SpreadsheetApp.openById(ID_MASTER_SHEET_APP_1);
+    const sheetSekolah = masterSS.getSheetByName('Sheet_Sekolah');
+    const dataMaster = sheetSekolah.getDataRange().getValues();
+    let rowData = null;
+    
+    for(let i=1; i<dataMaster.length; i++) {
+      // Pastikan Npsn (Kolom H) cocok
+      if (String(dataMaster[i][7]).trim() === String(npsn).trim()) {
+        rowData = dataMaster[i];
+        break;
+      }
+    }
+    
+    if (!rowData) throw new Error("Data sekolah tidak ditemukan (NPSN tidak cocok).");
+
+    const namaSekolah = rowData[1]; // Kolom B
+    const app1DbId = rowData[5];    // Kolom F
+    const kopFileId = rowData[15];  // Kolom P
+    const tempatTtd = rowData[19] || ''; // Kolom T
+    const arsipDbId = rowData[21];  // Kolom V
+
+    // 2. Ambil Info Kepsek dari App 1
+    let kepalaSekolah = '.........................';
+    let nipKepsek = '-';
+    let jenjang = '';
+    
+    if (app1DbId) {
+       try {
+         const ss1 = SpreadsheetApp.openById(app1DbId);
+         const dsSheet = ss1.getSheetByName('Data_Sekolah');
+         if (dsSheet) {
+           const val = dsSheet.getRange('A2:P2').getValues()[0];
+           jenjang = val[0] || '';
+           if(val[14]) kepalaSekolah = val[14];
+           if(val[15]) nipKepsek = val[15];
+         }
+       } catch(e) { /* Abaikan error ambil kepsek */ }
+    }
+
+    // 3. Ambil Data Nilai dari Arsip
+    const ssArsip = SpreadsheetApp.openById(arsipDbId);
+    const sheet = ssArsip.getSheetByName(sheetName);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    // Cari Index Kolom
+    const idxNo = headers.indexOf('No');
+    const idxNama = headers.indexOf('Nama Siswa');
+    const idxNisn = headers.indexOf('NISN');
+    const idxKelas = headers.indexOf('Kelas');
+    const colTarget = `${mapel}_${jenisNilai}`; // Contoh: BINDO_Ujian
+    const idxNilai = headers.indexOf(colTarget);
+    
+    if (idxNilai === -1) throw new Error(`Data nilai '${colTarget}' tidak ditemukan di arsip.`);
+    
+    // 4. Filter & Format Data Siswa
+    const siswaList = [];
+    for (let i = 1; i < data.length; i++) {
+       const row = data[i];
+       const kelasSiswa = row[idxKelas];
+       
+       if (filterKelas !== 'semua' && String(kelasSiswa) !== String(filterKelas)) continue;
+       
+       const nilaiRaw = row[idxNilai];
+       let nilaiAngka = '';
+       let nilaiHuruf = '';
+       
+       if (nilaiRaw !== "" && nilaiRaw != null) {
+          const num = parseFloat(nilaiRaw);
+          nilaiAngka = Math.round(num);
+          nilaiHuruf = terbilang(nilaiAngka);
+       }
+       
+       siswaList.push({
+         no: row[idxNo],
+         nama: row[idxNama],
+         nisn: row[idxNisn] ? String(row[idxNisn]).replace("'", "") : "-",
+         kelas: kelasSiswa,
+         nilai: nilaiAngka,
+         huruf: nilaiHuruf
+       });
+    }
+    
+    // Urutkan: Kelas -> Nama
+    siswaList.sort((a, b) => {
+       if (a.kelas < b.kelas) return -1;
+       if (a.kelas > b.kelas) return 1;
+       return a.nama.localeCompare(b.nama);
+    });
+
+    // 5. Generate PDF HTML
+    const kopBase64 = _getImageAsBase64DataUrl(kopFileId);
+    let headerHtml = kopBase64 
+      ? `<div style="width:100%; border-bottom:3px solid black; margin-bottom:10px; text-align:center;"><img src="${kopBase64}" style="max-height:140px; width:100%; object-fit:contain;"></div>`
+      : `<div style="text-align:center; border-bottom:3px solid black; padding-bottom:10px; margin-bottom:20px;"><h2>${namaSekolah}</h2></div>`;
+      
+    let rowsHtml = '';
+    if (siswaList.length === 0) {
+      rowsHtml = '<tr><td colspan="6" style="text-align:center; padding:20px;">Tidak ada data.</td></tr>';
+    } else {
+      siswaList.forEach((s, i) => {
+        rowsHtml += `<tr>
+          <td style="text-align:center;">${i+1}</td>
+          <td style="text-align:center;">${s.nisn}</td>
+          <td>${s.nama}</td>
+          <td style="text-align:center;">${s.kelas}</td>
+          <td style="text-align:center;">${s.nilai}</td>
+          <td style="font-style:italic;">${s.huruf}</td>
+        </tr>`;
+      });
+    }
+    
+    const tglStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const jabatan = (jenjang.includes('M') || jenjang.includes('MTS') || jenjang.includes('MA')) ? "Kepala Madrasah" : "Kepala Sekolah";
+    const tahunAjar = sheetName.replace('Arsip ', '');
+    
+    const html = `
+      <html><head><style>
+        @page { size: A4; margin: 1cm; }
+        body { font-family: Arial, sans-serif; font-size: 10pt; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid black; padding: 4px; }
+        th { background-color: #e0e0e0; text-align: center; font-weight: bold; }
+        .info-table { border: none; margin-bottom: 15px; width: 100%; }
+        .info-table td { border: none; padding: 2px; }
+      </style></head><body>
+        ${headerHtml}
+        <div style="text-align:center; margin-bottom:15px;">
+           <h3 style="text-decoration:underline; margin:5px;">LAPORAN NILAI ${jenisNilai.toUpperCase()} (ARSIP)</h3>
+           <p style="margin:0;">Tahun Ajaran: ${tahunAjar}</p>
+        </div>
+        <table class="info-table">
+           <tr><td width="120">Mata Pelajaran</td><td>: <strong>${mapel}</strong></td></tr>
+           <tr><td>Kelas</td><td>: <strong>${filterKelas === 'semua' ? 'Semua Kelas' : filterKelas}</strong></td></tr>
+        </table>
+        <table>
+           <thead>
+             <tr><th width="30">No</th><th width="80">NISN</th><th>Nama Siswa</th><th width="60">Kelas</th><th width="50">Nilai</th><th>Terbilang</th></tr>
+           </thead>
+           <tbody>${rowsHtml}</tbody>
+        </table>
+        <div style="margin-top:30px; float:right; width:250px; text-align:center;">
+           ${tempatTtd}, ${tglStr}<br>
+           Mengetahui,<br>${jabatan}<br><br><br><br>
+           <strong><u>${kepalaSekolah}</u></strong><br>NIP. ${nipKepsek}
+        </div>
+      </body></html>
+    `;
+    
+    const blob = Utilities.newBlob(html, MimeType.HTML).getAs(MimeType.PDF);
+    const b64 = Utilities.base64Encode(blob.getBytes());
+    return { success: true, base64Data: b64, fileName: `Arsip_${mapel}_${jenisNilai}_${tahunAjar}.pdf` };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// --- HELPER ---
+function _getImageAsBase64DataUrl(fileId) {
+  try {
+    if (!fileId) return null;
+    const blob = DriveApp.getFileById(fileId).getBlob();
+    return `data:${blob.getContentType()};base64,${Utilities.base64Encode(blob.getBytes())}`;
+  } catch (e) { return null; }
+}
+
+function terbilang(n) {
+    if (n < 0 || n > 100 || isNaN(n) || n === '') return '';
+    if (n === 100) return 'Seratus';
+    if (n === 0) return 'Nol';
+    const s = ["", "Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh", "Sebelas"];
+    if (n < 12) return s[n];
+    if (n < 20) return s[n - 10] + " Belas";
+    const p = Math.floor(n / 10);
+    const r = n % 10;
+    return (s[p] + " Puluh") + (r === 0 ? '' : " " + s[r]);
 }

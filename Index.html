@@ -460,7 +460,7 @@
   }
 
   function renderTable() {
-      // Logika render untuk mode Single (Mirip dengan kode lama Anda, disederhanakan)
+      // Logika render untuk mode Single
       const jenis = document.getElementById('select-jenis').value;
       const headers = globalTableData.headers;
       const thead = document.getElementById('table-head');
@@ -504,12 +504,35 @@
                 <td>${start + i + 1}</td>
                 <td>${row[1]}</td> <td>${row[2]}</td> <td class="text-center">${row[3]}</td> `;
               
-              // Nilai Mapel
-              idxMapel.forEach(idx => tr += `<td class="text-center">${row[idx]||''}</td>`);
+              // --- [MODIFIKASI MULAI]: Hitung Nilai Manual (Fallback) ---
+              let hitungSum = 0;
+              let hitungCount = 0;
+
+              // Nilai Mapel & Akumulasi
+              idxMapel.forEach(idx => {
+                  const val = row[idx];
+                  tr += `<td class="text-center">${val||''}</td>`;
+                  
+                  // Logika hitung manual
+                  if (val !== "" && val !== null && !isNaN(parseFloat(val))) {
+                      hitungSum += parseFloat(val);
+                      hitungCount++;
+                  }
+              });
               
-              // Totals
-              tr += `<td class="text-center fw-bold">${idxJml>-1 ? row[idxJml] : '-'}</td>`;
-              tr += `<td class="text-center fw-bold">${idxRata>-1 ? row[idxRata] : '-'}</td>`;
+              // Tentukan Nilai Akhir (Gunakan Data Sheet jika ada, jika tidak gunakan Hasil Hitung)
+              const displayJml = (idxJml > -1 && row[idxJml] !== "") 
+                  ? row[idxJml] 
+                  : (hitungCount > 0 ? parseFloat(hitungSum.toFixed(2)) : 0);
+
+              const displayRata = (idxRata > -1 && row[idxRata] !== "") 
+                  ? row[idxRata] 
+                  : (hitungCount > 0 ? (hitungSum / hitungCount).toFixed(2) : 0);
+              // --- [MODIFIKASI SELESAI] ---
+              
+              // Totals (Tampilkan Hasil)
+              tr += `<td class="text-center fw-bold">${displayJml}</td>`;
+              tr += `<td class="text-center fw-bold">${displayRata}</td>`;
               
               // Status
               const stat = idxStatus > -1 ? row[idxStatus] : '';

@@ -84,6 +84,17 @@
         max-width: 500px; margin: 100px auto; text-align: center; padding: 40px; background: white; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);
     }
     #view-error i { font-size: 60px; color: #dc3545; margin-bottom: 20px; }
+
+    /* CONTAINER TABEL RESPONSIVE */
+    .table-responsive {
+        max-height: 70vh; 
+        overflow-x: auto; 
+        position: relative;
+        
+        /* TAMBAHAN: Mencegah scroll tabel memblokir scroll halaman induk */
+        overscroll-behavior: contain; 
+        -webkit-overflow-scrolling: touch; /* Momentum scroll untuk iOS */
+    }
   </style>
 </head>
 <body>

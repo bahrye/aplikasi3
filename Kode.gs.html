@@ -1,5 +1,10 @@
 const ID_MASTER_SHEET_APP_1 = "191TzI0vRzK8xg7kGym8qUnvXz_edlCH_IJmmwMZMK_M"; // Pastikan ID ini benar
 
+// --- FUNGSI PEMICU IZIN (JANGAN DIHAPUS) ---
+function _triggerDrivePermission() {
+  DriveApp.getFiles();
+}
+
 function doGet(e) {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
@@ -171,23 +176,17 @@ function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
   }
 }
 
-// --- FUNGSI BARU: FITUR PDF ARSIP ---
+// --- FITUR PDF ARSIP ---
 
-/**
- * Mengambil daftar Mata Pelajaran dari header sheet Arsip.
- * Format header di arsip biasanya: "NAMAMAPEL_Ujian", "NAMAMAPEL_Rapor", dst.
- */
 function getMapelListFromArsip(arsipDbId, sheetName) {
   try {
     const ss = SpreadsheetApp.openById(arsipDbId);
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) throw new Error("Data tahun tersebut tidak ditemukan.");
     
-    // Ambil header baris pertama
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     const mapelSet = new Set();
     
-    // Kolom-kolom standar yang harus diabaikan
     const ignoreHeaders = [
       'No', 'Nama Siswa', 'NISN', 'Kelas', 'Status', 
       'Jumlah_Ujian', 'Jumlah_Rapor', 'Jumlah_Ijazah', 
@@ -196,12 +195,9 @@ function getMapelListFromArsip(arsipDbId, sheetName) {
     
     headers.forEach(h => {
       if (h && !ignoreHeaders.includes(h)) {
-        // Logika: Ambil string sebelum underscore terakhir
-        // Contoh: "BAHASA INDONESIA_Ujian" -> "BAHASA INDONESIA"
         const lastUnderscore = h.lastIndexOf('_');
         if (lastUnderscore > 0) {
           const mapelName = h.substring(0, lastUnderscore);
-          // Validasi tambahan agar tidak mengambil sampah
           if (mapelName.length > 1) {
             mapelSet.add(mapelName);
           }
@@ -209,17 +205,12 @@ function getMapelListFromArsip(arsipDbId, sheetName) {
       }
     });
     
-    // Kembalikan array mapel yang sudah diurutkan
     return { success: true, mapels: Array.from(mapelSet).sort() };
   } catch (e) {
     return { success: false, message: e.message };
   }
 }
 
-/**
- * Mengambil daftar Kelas yang unik dari data Arsip.
- * Digunakan untuk mengisi dropdown kelas di mode Cetak.
- */
 function getClassListFromArsip(arsipDbId, sheetName) {
   try {
     const ss = SpreadsheetApp.openById(arsipDbId);
@@ -229,14 +220,12 @@ function getClassListFromArsip(arsipDbId, sheetName) {
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) return { success: true, classes: [] };
     
-    // Cari indeks kolom 'Kelas'
     const headers = data[0];
     const idxKelas = headers.indexOf('Kelas');
     
     if (idxKelas === -1) throw new Error("Kolom 'Kelas' tidak ditemukan di arsip.");
     
     const classSet = new Set();
-    // Loop data mulai baris ke-2
     for (let i = 1; i < data.length; i++) {
       const k = data[i][idxKelas];
       if (k) classSet.add(k);
@@ -250,9 +239,23 @@ function getClassListFromArsip(arsipDbId, sheetName) {
 
 /**
  * Generate PDF Laporan Nilai Siswa dari Arsip.
+ * [PERBAIKAN]:
+ * 1. Nama Sekolah di bawah judul.
+ * 2. Nama Mapel Lengkap.
+ * 3. Format Nama Kepala Sekolah (Kapital Nama, Title Benar).
+ * 4. [BARU] LockService ditambahkan untuk antrean proses download.
  */
 function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
+  // 1. Inisialisasi LockService
+  const lock = LockService.getScriptLock();
+  
   try {
+    // 2. Tunggu Antrean (maksimal 30 detik)
+    // Jika ada user lain sedang download, proses ini akan pause di sini sampai user lain selesai
+    lock.waitLock(30000); 
+
+    // --- MULAI PROSES PDF ---
+
     // 1. Cari Data Sekolah di Master Sheet
     const masterSS = SpreadsheetApp.openById(ID_MASTER_SHEET_APP_1);
     const sheetSekolah = masterSS.getSheetByName('Sheet_Sekolah');
@@ -260,7 +263,6 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
     let rowData = null;
     
     for(let i=1; i<dataMaster.length; i++) {
-      // Pastikan Npsn (Kolom H) cocok
       if (String(dataMaster[i][7]).trim() === String(npsn).trim()) {
         rowData = dataMaster[i];
         break;
@@ -271,18 +273,21 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
 
     const namaSekolah = rowData[1]; // Kolom B
     const app1DbId = rowData[5];    // Kolom F
-    const kopFileId = rowData[15];  // Kolom P
+    const kopFileId = rowData[15];  // Kolom P (ID File Kop Surat)
     const tempatTtd = rowData[19] || ''; // Kolom T
     const arsipDbId = rowData[21];  // Kolom V
 
-    // 2. Ambil Info Kepsek dari App 1
+    // 2. Ambil Info Kepsek & Nama Mapel Lengkap dari App 1
     let kepalaSekolah = '.........................';
     let nipKepsek = '-';
     let jenjang = '';
+    let mapelFullName = mapel; // Default ke Kode
     
     if (app1DbId) {
        try {
          const ss1 = SpreadsheetApp.openById(app1DbId);
+         
+         // A. Ambil Data Sekolah
          const dsSheet = ss1.getSheetByName('Data_Sekolah');
          if (dsSheet) {
            const val = dsSheet.getRange('A2:P2').getValues()[0];
@@ -290,7 +295,20 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
            if(val[14]) kepalaSekolah = val[14];
            if(val[15]) nipKepsek = val[15];
          }
-       } catch(e) { /* Abaikan error ambil kepsek */ }
+
+         // B. Ambil Nama Lengkap Mapel
+         const mapelSheetRef = ss1.getSheetByName('Mapel');
+         if (mapelSheetRef) {
+             const dataMapelRef = mapelSheetRef.getDataRange().getValues();
+             for(let m=1; m < dataMapelRef.length; m++) {
+                 if (String(dataMapelRef[m][0]).trim() === String(mapel).trim()) {
+                     mapelFullName = dataMapelRef[m][1];
+                     break;
+                 }
+             }
+         }
+
+       } catch(e) { Logger.log("Error ambil data dari App 1: " + e.message); }
     }
 
     // 3. Ambil Data Nilai dari Arsip
@@ -299,12 +317,11 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     
-    // Cari Index Kolom
     const idxNo = headers.indexOf('No');
     const idxNama = headers.indexOf('Nama Siswa');
     const idxNisn = headers.indexOf('NISN');
     const idxKelas = headers.indexOf('Kelas');
-    const colTarget = `${mapel}_${jenisNilai}`; // Contoh: BINDO_Ujian
+    const colTarget = `${mapel}_${jenisNilai}`; 
     const idxNilai = headers.indexOf(colTarget);
     
     if (idxNilai === -1) throw new Error(`Data nilai '${colTarget}' tidak ditemukan di arsip.`);
@@ -337,7 +354,6 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
        });
     }
     
-    // Urutkan: Kelas -> Nama
     siswaList.sort((a, b) => {
        if (a.kelas < b.kelas) return -1;
        if (a.kelas > b.kelas) return 1;
@@ -345,10 +361,25 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
     });
 
     // 5. Generate PDF HTML
-    const kopBase64 = _getImageAsBase64DataUrl(kopFileId);
-    let headerHtml = kopBase64 
-      ? `<div style="width:100%; border-bottom:3px solid black; margin-bottom:10px; text-align:center;"><img src="${kopBase64}" style="max-height:140px; width:100%; object-fit:contain;"></div>`
-      : `<div style="text-align:center; border-bottom:3px solid black; padding-bottom:10px; margin-bottom:20px;"><h2>${namaSekolah}</h2></div>`;
+    let kopBase64 = null;
+    let headerHtml = '';
+
+    if (kopFileId) {
+        Logger.log("Mencoba mengambil kop surat ID: " + kopFileId);
+        kopBase64 = _getImageAsBase64DataUrl(kopFileId);
+    }
+
+    if (kopBase64) {
+      headerHtml = `
+        <div style="width:100%; text-align:center; margin-bottom:10px; padding-bottom:5px;">
+           <img src="${kopBase64}" style="width:680px; display:block; margin:0 auto;" />
+        </div>`;
+    } else {
+      headerHtml = `
+        <div style="text-align:center; border-bottom:3px solid black; padding-bottom:10px; margin-bottom:20px;">
+           <h2 style="margin:0;">${namaSekolah.toUpperCase()}</h2>
+        </div>`;
+    }
       
     let rowsHtml = '';
     if (siswaList.length === 0) {
@@ -369,6 +400,8 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
     const tglStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
     const jabatan = (jenjang.includes('M') || jenjang.includes('MTS') || jenjang.includes('MA')) ? "Kepala Madrasah" : "Kepala Sekolah";
     const tahunAjar = sheetName.replace('Arsip ', '');
+
+    const kepsekFormatted = formatNamaGelar(kepalaSekolah);
     
     const html = `
       <html><head><style>
@@ -383,10 +416,11 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
         ${headerHtml}
         <div style="text-align:center; margin-bottom:15px;">
            <h3 style="text-decoration:underline; margin:5px;">LAPORAN NILAI ${jenisNilai.toUpperCase()} (ARSIP)</h3>
+           <h4 style="margin:5px; font-weight:bold;">${namaSekolah.toUpperCase()}</h4>
            <p style="margin:0;">Tahun Ajaran: ${tahunAjar}</p>
         </div>
         <table class="info-table">
-           <tr><td width="120">Mata Pelajaran</td><td>: <strong>${mapel}</strong></td></tr>
+           <tr><td width="120">Mata Pelajaran</td><td>: <strong>${mapelFullName.toUpperCase()}</strong></td></tr>
            <tr><td>Kelas</td><td>: <strong>${filterKelas === 'semua' ? 'Semua Kelas' : filterKelas}</strong></td></tr>
         </table>
         <table>
@@ -398,7 +432,7 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
         <div style="margin-top:30px; float:right; width:250px; text-align:center;">
            ${tempatTtd}, ${tglStr}<br>
            Mengetahui,<br>${jabatan}<br><br><br><br>
-           <strong><u>${kepalaSekolah}</u></strong><br>NIP. ${nipKepsek}
+           <strong><u>${kepsekFormatted}</u></strong><br>NIP. ${nipKepsek}
         </div>
       </body></html>
     `;
@@ -409,16 +443,28 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
 
   } catch (e) {
     return { success: false, message: e.message };
+  } finally {
+    // 3. Lepaskan Lock (Wajib, bahkan jika error)
+    lock.releaseLock();
   }
 }
 
-// --- HELPER ---
+// --- HELPER: DIPERBAIKI UNTUK AKSES DRIVE ---
 function _getImageAsBase64DataUrl(fileId) {
   try {
     if (!fileId) return null;
-    const blob = DriveApp.getFileById(fileId).getBlob();
-    return `data:${blob.getContentType()};base64,${Utilities.base64Encode(blob.getBytes())}`;
-  } catch (e) { return null; }
+    
+    const file = DriveApp.getFileById(fileId);
+    const blob = file.getBlob();
+    
+    const contentType = blob.getContentType();
+    const base64 = Utilities.base64Encode(blob.getBytes());
+    
+    return `data:${contentType};base64,${base64}`;
+  } catch (e) {
+    Logger.log(`Gagal mengambil gambar (ID: ${fileId}). Error: ${e.message}`);
+    return null;
+  }
 }
 
 function terbilang(n) {
@@ -431,4 +477,67 @@ function terbilang(n) {
     const p = Math.floor(n / 10);
     const r = n % 10;
     return (s[p] + " Puluh") + (r === 0 ? '' : " " + s[r]);
+}
+
+function properCaseGelar(gelarString) {
+  if (!gelarString) return '';
+  
+  const joiner = gelarString.includes('.') ? ' ' : '.'; 
+
+  return gelarString.split(' ') 
+    .map(gelarPart => {
+      return gelarPart.split('.') 
+        .map(subPart => {
+          if (subPart.length === 0) return ''; 
+          if (subPart === subPart.toUpperCase()) return subPart; 
+          if (subPart.length === 1) return subPart.toUpperCase(); 
+          return subPart.charAt(0).toUpperCase() + subPart.slice(1).toLowerCase(); 
+        })
+        .join('.'); 
+    })
+    .join(' '); 
+}
+
+function formatNamaGelar(namaLengkap) {
+  if (!namaLengkap) return '';
+  namaLengkap = namaLengkap.trim();
+  
+  let nama = '';
+  let gelar = '';
+  
+  const commaIndex = namaLengkap.indexOf(',');
+  
+  if (commaIndex > -1) {
+    nama = namaLengkap.substring(0, commaIndex).trim();
+    gelar = namaLengkap.substring(commaIndex + 1).trim();
+  } else {
+    const parts = namaLengkap.split(' ');
+    if (parts.length < 2) return namaLengkap.toUpperCase();
+    
+    let titleStartIndex = -1;
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      const isGelar = part.includes('.') || 
+                      (part.length >= 1 && part.length <= 3 && part === part.toUpperCase());
+                      
+      if (isGelar) {
+        titleStartIndex = i;
+        break;
+      }
+    }
+
+    if (titleStartIndex > -1) {
+      nama = parts.slice(0, titleStartIndex).join(' ');
+      gelar = parts.slice(titleStartIndex).join(' ');
+    } else {
+      nama = namaLengkap;
+      gelar = '';
+    }
+  }
+
+  if (gelar) {
+    return nama.toUpperCase() + ', ' + properCaseGelar(gelar);
+  } else {
+    return nama.toUpperCase();
+  }
 }

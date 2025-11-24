@@ -31,12 +31,12 @@
         padding-bottom: 5px; 
     }
     
-    /* --- [UPDATE] GLOBAL TABLE STYLING (LEBIH BESAR & LEGA) --- */
+    /* --- GLOBAL TABLE STYLING (LEBIH BESAR & LEGA) --- */
     .table th, .table td {
         padding: 14px 20px !important;     /* Jarak teks ke garis tepi tetap lega */
         vertical-align: middle !important; /* Teks selalu di tengah vertikal */
         border: 1px solid #dee2e6;
-        font-size: 16px; /* <-- DIPERBESAR: Menjadi 16px (sebelumnya 14px) */
+        font-size: 16px; /* Ukuran teks besar */
     }
 
     /* Header Table Selalu Sticky di Atas */
@@ -49,23 +49,23 @@
         top: 0; 
         z-index: 10; 
         box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
-        font-size: 16px; /* <-- HEADER JUGA DIPERBESAR */
+        font-size: 16px; 
     }
     
-    /* --- DEFAULT: MODE SINGLE (Detail Siswa) --- */
+    /* --- MODE SINGLE (Detail Siswa) --- */
     
-    /* Kolom ke-2 (Nama Siswa) - FULL 1 BARIS & LEBAR */
+    /* TAMPILAN DESKTOP (DEFAULT) */
     table:not(.mode-range) tbody td:nth-child(2),
     table:not(.mode-range) thead th:nth-child(2) {
         position: sticky; 
         left: 0; 
         z-index: 11; 
         
-        /* Lebar Minimal yang Luas */
+        /* Lebar Luas untuk Laptop */
         min-width: 350px !important; 
         width: auto !important; 
 
-        /* Paksa 1 Baris & Tampilkan Full */
+        /* Paksa 1 Baris di Laptop */
         white-space: nowrap !important; 
         
         border-right: 2px solid #dee2e6;
@@ -75,7 +75,27 @@
     table:not(.mode-range) tbody td:nth-child(2) { background-color: #fff; }
     table:not(.mode-range) thead th:nth-child(2) { background-color: #212529 !important; z-index: 12; border-right: 2px solid #495057; }
     
-    /* --- KHUSUS: MODE RANGE (Rentang Tahun) --- */
+    /* --- [UPDATE] TAMPILAN MOBILE (RESPONSIF) --- */
+    @media (max-width: 768px) {
+        /* Override khusus untuk HP: Nama Siswa Wrap & Lebih Kecil */
+        table:not(.mode-range) tbody td:nth-child(2),
+        table:not(.mode-range) thead th:nth-child(2) {
+            min-width: 160px !important; /* Perkecil lebar agar kolom mapel terlihat */
+            max-width: 160px !important;
+            width: 160px !important;
+            
+            /* Izinkan turun baris (Wrap) agar nama panjang tetap terbaca */
+            white-space: normal !important; 
+            
+            /* Tetap Sticky agar nama selalu terlihat saat geser ke nilai */
+            position: sticky;
+            left: 0;
+            z-index: 11;
+            border-right: 2px solid #dee2e6;
+        }
+    }
+
+    /* --- MODE RANGE (Rentang Tahun) --- */
     
     /* Reset kolom ke-2 agar TIDAK sticky di mode range */
     table.mode-range tbody td:nth-child(2),
@@ -84,6 +104,8 @@
         border-right: 1px solid #dee2e6;
         z-index: auto;
         min-width: auto !important;
+        max-width: none !important;
+        white-space: nowrap !important;
     }
 
     /* Buat kolom ke-1 (Tahun Pelajaran) menjadi Sticky */

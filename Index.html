@@ -440,46 +440,66 @@
       }).getArsipDataRange(currentArsipDbId, start, end, jenis);
   }
 
-  // --- LOGIKA MODE PDF ---
+  // --- LOGIKA MODE PDF (DIPERBAIKI: Mencegah Error 429) ---
   function loadDropdownsForPdf(sheetName) {
-      // 1. Load Mapel
       const elMapel = document.getElementById('select-mapel');
       const elKelas = document.getElementById('select-kelas');
       const btnPdf = document.getElementById('btn-download-pdf');
       
+      // Reset UI
       elMapel.innerHTML = '<option>Memuat...</option>';
       elMapel.disabled = true;
       elKelas.innerHTML = '<option>Memuat...</option>';
       elKelas.disabled = true;
       btnPdf.disabled = true;
+      
+      // Tampilkan Loader
+      showLoader(true, "Menyiapkan data PDF...");
 
-      // Panggil Mapel
-      google.script.run.withSuccessHandler(res => {
-          elMapel.innerHTML = '<option value="">-- Pilih Mapel --</option>';
-          elMapel.disabled = false;
-          if(res.success) {
-              res.mapels.forEach(m => {
-                  let opt = document.createElement('option');
-                  opt.value = m; opt.innerText = m;
-                  elMapel.appendChild(opt);
-              });
-          }
-          checkPdfReady();
-      }).getMapelListFromArsip(currentArsipDbId, sheetName);
+      // PANGGILAN TUNGGAL KE SERVER (Single Request)
+      google.script.run
+        .withSuccessHandler(res => {
+            showLoader(false); // Matikan loader setelah selesai
+            
+            if (res.success) {
+                // 1. Isi Dropdown Mapel
+                elMapel.innerHTML = '<option value="">-- Pilih Mapel --</option>';
+                if (res.mapels.length > 0) {
+                    res.mapels.forEach(m => {
+                        let opt = document.createElement('option');
+                        opt.value = m; opt.innerText = m;
+                        elMapel.appendChild(opt);
+                    });
+                    elMapel.disabled = false;
+                } else {
+                    elMapel.innerHTML = '<option value="">Tidak ada Mapel</option>';
+                }
 
-      // Panggil Kelas
-      google.script.run.withSuccessHandler(res => {
-          elKelas.innerHTML = '<option value="semua">Semua Kelas</option>';
-          elKelas.disabled = false;
-          if(res.success && res.classes.length > 0) {
-              res.classes.forEach(c => {
-                  let opt = document.createElement('option');
-                  opt.value = c; opt.innerText = c;
-                  elKelas.appendChild(opt);
-              });
-          }
-          checkPdfReady();
-      }).getClassListFromArsip(currentArsipDbId, sheetName);
+                // 2. Isi Dropdown Kelas
+                elKelas.innerHTML = '<option value="semua">Semua Kelas</option>';
+                if (res.classes.length > 0) {
+                    res.classes.forEach(c => {
+                        let opt = document.createElement('option');
+                        opt.value = c; opt.innerText = c;
+                        elKelas.appendChild(opt);
+                    });
+                }
+                elKelas.disabled = false;
+                
+                // Cek status tombol download
+                checkPdfReady();
+                
+            } else {
+                alert("Gagal memuat data: " + res.message);
+                elMapel.innerHTML = '<option value="">Error</option>';
+                elKelas.innerHTML = '<option value="">Error</option>';
+            }
+        })
+        .withFailureHandler(err => {
+            showLoader(false);
+            alert("Error Koneksi: " + err.message);
+        })
+        .getArsipDropdownData(currentArsipDbId, sheetName); // Memanggil fungsi baru di server
   }
   
   // Listener perubahan Mapel untuk aktifkan tombol

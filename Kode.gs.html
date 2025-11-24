@@ -176,17 +176,26 @@ function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
   }
 }
 
-// --- FITUR PDF ARSIP ---
+// --- OPTIMASI UNTUK MENCEGAH ERROR 429 ---
 
-function getMapelListFromArsip(arsipDbId, sheetName) {
+/**
+ * Mengambil data Mapel dan Kelas sekaligus dalam satu panggilan server.
+ * Menggantikan fungsi terpisah getMapelListFromArsip dan getClassListFromArsip.
+ */
+function getArsipDropdownData(arsipDbId, sheetName) {
   try {
     const ss = SpreadsheetApp.openById(arsipDbId);
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) throw new Error("Data tahun tersebut tidak ditemukan.");
     
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const mapelSet = new Set();
+    // Ambil semua data sekaligus (Hemat Read Operation)
+    const data = sheet.getDataRange().getValues();
+    if (data.length === 0) return { success: true, mapels: [], classes: [] };
     
+    const headers = data[0];
+    
+    // 1. Proses Mapel (Dari Header)
+    const mapelSet = new Set();
     const ignoreHeaders = [
       'No', 'Nama Siswa', 'NISN', 'Kelas', 'Status', 
       'Jumlah_Ujian', 'Jumlah_Rapor', 'Jumlah_Ijazah', 
@@ -195,6 +204,7 @@ function getMapelListFromArsip(arsipDbId, sheetName) {
     
     headers.forEach(h => {
       if (h && !ignoreHeaders.includes(h)) {
+        // Cari underscore terakhir untuk memisahkan nama mapel dari jenis nilai
         const lastUnderscore = h.lastIndexOf('_');
         if (lastUnderscore > 0) {
           const mapelName = h.substring(0, lastUnderscore);
@@ -204,34 +214,24 @@ function getMapelListFromArsip(arsipDbId, sheetName) {
         }
       }
     });
-    
-    return { success: true, mapels: Array.from(mapelSet).sort() };
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
 
-function getClassListFromArsip(arsipDbId, sheetName) {
-  try {
-    const ss = SpreadsheetApp.openById(arsipDbId);
-    const sheet = ss.getSheetByName(sheetName);
-    if (!sheet) throw new Error("Data tahun tersebut tidak ditemukan.");
-    
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return { success: true, classes: [] };
-    
-    const headers = data[0];
+    // 2. Proses Kelas (Dari Data Baris)
     const idxKelas = headers.indexOf('Kelas');
-    
-    if (idxKelas === -1) throw new Error("Kolom 'Kelas' tidak ditemukan di arsip.");
-    
     const classSet = new Set();
-    for (let i = 1; i < data.length; i++) {
-      const k = data[i][idxKelas];
-      if (k) classSet.add(k);
+    
+    if (idxKelas !== -1 && data.length > 1) {
+      for (let i = 1; i < data.length; i++) {
+        const k = data[i][idxKelas];
+        if (k) classSet.add(k);
+      }
     }
     
-    return { success: true, classes: Array.from(classSet).sort() };
+    return { 
+      success: true, 
+      mapels: Array.from(mapelSet).sort(), 
+      classes: Array.from(classSet).sort() 
+    };
+
   } catch (e) {
     return { success: false, message: e.message };
   }

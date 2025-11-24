@@ -23,31 +23,33 @@
     .table-container { background: white; border-radius: 10px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow: hidden; }
     .table-responsive { max-height: 70vh; overflow-x: auto; position: relative; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     
-    /* Header Table Sticky Default */
+    /* --- KONFIGURASI STICKY TABLE --- */
+    
+    /* Header Table Selalu Sticky di Atas */
     thead th { background-color: #212529 !important; color: white !important; white-space: nowrap; text-align: center; vertical-align: middle; position: sticky; top: 0; z-index: 10; }
     
-    /* --- KONFIGURASI STICKY DEFAULT (MODE SINGLE / DETAIL SISWA) --- */
-    /* Default: Kolom 2 (Nama Siswa) yang Sticky */
+    /* --- DEFAULT: MODE SINGLE (Detail Siswa) --- */
+    /* Kolom ke-2 (Nama Siswa) yang Sticky */
     tbody td:nth-child(2) { position: sticky; left: 0; z-index: 11; background-color: #fff; border-right: 2px solid #dee2e6; }
     thead th:nth-child(2) { position: sticky; left: 0; z-index: 12; background-color: #212529 !important; border-right: 2px solid #495057; }
     
-    /* --- KONFIGURASI STICKY KHUSUS MODE RANGE (RENTANG TAHUN) --- */
-    /* Saat tabel punya class 'mode-range', reset kolom 2 agar TIDAK sticky */
+    /* --- KHUSUS: MODE RANGE (Rentang Tahun) --- */
+    /* Reset kolom ke-2 agar TIDAK sticky */
     table.mode-range tbody td:nth-child(2),
     table.mode-range thead th:nth-child(2) {
         position: static !important;
-        border-right: 1px solid #dee2e6; /* Reset border ke normal */
+        border-right: 1px solid #dee2e6;
         z-index: auto;
     }
 
-    /* Saat tabel punya class 'mode-range', buat kolom 1 (Tahun Pelajaran) jadi Sticky */
+    /* Buat kolom ke-1 (Tahun Pelajaran) menjadi Sticky */
     table.mode-range tbody td:nth-child(1) {
         position: sticky !important;
         left: 0;
         z-index: 11;
         background-color: #fff;
         border-right: 2px solid #dee2e6;
-        font-weight: bold; /* Opsional: Tebalkan tahun */
+        font-weight: bold;
     }
     table.mode-range thead th:nth-child(1) {
         position: sticky !important;

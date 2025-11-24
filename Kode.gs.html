@@ -1,4 +1,4 @@
-const ID_MASTER_SHEET_APP_1 = "191TzI0vRzK8xg7kGym8qUnvXz_edlCH_IJmmwMZMK_M"; // Pastikan ID ini benar
+const ID_MASTER_SHEET_APP_1 = "191TzI0vRzK8xg7kGym8qUnvXz_edlCH_IJmmwMZMK_M"; 
 
 // --- FUNGSI PEMICU IZIN (JANGAN DIHAPUS) ---
 function _triggerDrivePermission() {
@@ -18,6 +18,15 @@ function loginArsip(npsn) {
   try {
     if (!npsn) throw new Error("NPSN wajib diisi.");
     
+    // CACHE LOGIN: Cek apakah info sekolah untuk NPSN ini ada di cache
+    const cache = CacheService.getScriptCache();
+    const cacheKey = "LOGIN_ARSIP_" + npsn;
+    const cachedData = cache.get(cacheKey);
+    
+    if (cachedData) {
+       return { success: true, data: JSON.parse(cachedData) };
+    }
+
     const masterSS = SpreadsheetApp.openById(ID_MASTER_SHEET_APP_1);
     const sheetSekolah = masterSS.getSheetByName('Sheet_Sekolah');
     const data = sheetSekolah.getDataRange().getValues();
@@ -37,6 +46,9 @@ function loginArsip(npsn) {
     if (!sekolahInfo) throw new Error("NPSN tidak ditemukan.");
     if (!sekolahInfo.arsipDbId) throw new Error("Sekolah ini belum memiliki Arsip Nilai.");
     
+    // Simpan hasil login ke cache selama 6 jam
+    cache.put(cacheKey, JSON.stringify(sekolahInfo), 21600);
+
     return { success: true, data: sekolahInfo };
     
   } catch (e) {
@@ -46,6 +58,15 @@ function loginArsip(npsn) {
 
 function getArsipYears(arsipDbId) {
   try {
+    // CACHE YEARS: Daftar tahun jarang berubah
+    const cache = CacheService.getScriptCache();
+    const cacheKey = "YEARS_" + arsipDbId;
+    const cachedData = cache.get(cacheKey);
+    
+    if (cachedData) {
+       return { success: true, years: JSON.parse(cachedData) };
+    }
+
     const ss = SpreadsheetApp.openById(arsipDbId);
     const sheets = ss.getSheets();
     const years = [];
@@ -57,6 +78,10 @@ function getArsipYears(arsipDbId) {
       }
     });
     years.sort().reverse();
+    
+    // Simpan ke cache 6 jam
+    cache.put(cacheKey, JSON.stringify(years), 21600);
+    
     return { success: true, years: years };
   } catch (e) {
     return { success: false, message: e.message };
@@ -65,6 +90,15 @@ function getArsipYears(arsipDbId) {
 
 function getArsipData(arsipDbId, sheetName) {
   try {
+    // CACHE DATA: Ini yang paling penting untuk mencegah Error 429
+    const cache = CacheService.getScriptCache();
+    const cacheKey = "DATA_" + arsipDbId + "_" + sheetName;
+    const cachedData = cache.get(cacheKey);
+
+    if (cachedData) {
+      return JSON.parse(cachedData); // Return langsung tanpa buka Spreadsheet
+    }
+
     const ss = SpreadsheetApp.openById(arsipDbId);
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) throw new Error("Data tahun tersebut tidak ditemukan.");
@@ -72,13 +106,31 @@ function getArsipData(arsipDbId, sheetName) {
     const data = sheet.getDataRange().getDisplayValues();
     const headers = data.shift();
     
-    return { success: true, headers: headers, rows: data };
+    const result = { success: true, headers: headers, rows: data };
+
+    // Simpan ke cache. Gunakan try-catch karena limit cache per item adalah 100KB.
+    try {
+      cache.put(cacheKey, JSON.stringify(result), 21600);
+    } catch (err) {
+      Logger.log("Data terlalu besar untuk cache: " + err.message);
+    }
+
+    return result;
   } catch (e) {
     return { success: false, message: e.message };
   }
 }
 
 function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
+  // Fungsi Range ini kompleks, kita cache hasil akhirnya
+  const cache = CacheService.getScriptCache();
+  const cacheKey = "RANGE_" + arsipDbId + "_" + startSheet + "_" + endSheet + "_" + jenisNilai;
+  const cachedData = cache.get(cacheKey);
+
+  if (cachedData) {
+     return JSON.parse(cachedData);
+  }
+
   try {
     const ss = SpreadsheetApp.openById(arsipDbId);
     const allSheets = ss.getSheets();
@@ -169,32 +221,40 @@ function getArsipDataRange(arsipDbId, startSheet, endSheet, jenisNilai) {
        });
     });
     
-    return { success: true, headers: finalHeaders, rows: finalRows };
+    const result = { success: true, headers: finalHeaders, rows: finalRows };
+    
+    // Cache hasil kalkulasi
+    try { cache.put(cacheKey, JSON.stringify(result), 21600); } catch(e){}
+
+    return result;
     
   } catch (e) {
     return { success: false, message: e.message };
   }
 }
 
-// --- OPTIMASI UNTUK MENCEGAH ERROR 429 ---
-
-/**
- * Mengambil data Mapel dan Kelas sekaligus dalam satu panggilan server.
- * Menggantikan fungsi terpisah getMapelListFromArsip dan getClassListFromArsip.
- */
+// --- OPTIMASI UNTUK MENCEGAH ERROR 429 (DROPDOWN PDF) ---
 function getArsipDropdownData(arsipDbId, sheetName) {
+  // CACHE DROPDOWN
+  const cache = CacheService.getScriptCache();
+  const cacheKey = "DROPDOWN_" + arsipDbId + "_" + sheetName;
+  const cachedData = cache.get(cacheKey);
+
+  if (cachedData) {
+    return JSON.parse(cachedData);
+  }
+
   try {
     const ss = SpreadsheetApp.openById(arsipDbId);
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) throw new Error("Data tahun tersebut tidak ditemukan.");
     
-    // Ambil semua data sekaligus (Hemat Read Operation)
     const data = sheet.getDataRange().getValues();
     if (data.length === 0) return { success: true, mapels: [], classes: [] };
     
     const headers = data[0];
     
-    // 1. Proses Mapel (Dari Header)
+    // 1. Proses Mapel
     const mapelSet = new Set();
     const ignoreHeaders = [
       'No', 'Nama Siswa', 'NISN', 'Kelas', 'Status', 
@@ -204,7 +264,6 @@ function getArsipDropdownData(arsipDbId, sheetName) {
     
     headers.forEach(h => {
       if (h && !ignoreHeaders.includes(h)) {
-        // Cari underscore terakhir untuk memisahkan nama mapel dari jenis nilai
         const lastUnderscore = h.lastIndexOf('_');
         if (lastUnderscore > 0) {
           const mapelName = h.substring(0, lastUnderscore);
@@ -215,7 +274,7 @@ function getArsipDropdownData(arsipDbId, sheetName) {
       }
     });
 
-    // 2. Proses Kelas (Dari Data Baris)
+    // 2. Proses Kelas
     const idxKelas = headers.indexOf('Kelas');
     const classSet = new Set();
     
@@ -226,37 +285,33 @@ function getArsipDropdownData(arsipDbId, sheetName) {
       }
     }
     
-    return { 
+    const result = { 
       success: true, 
       mapels: Array.from(mapelSet).sort(), 
       classes: Array.from(classSet).sort() 
     };
+
+    // Simpan Cache
+    cache.put(cacheKey, JSON.stringify(result), 21600);
+
+    return result;
 
   } catch (e) {
     return { success: false, message: e.message };
   }
 }
 
-/**
- * Generate PDF Laporan Nilai Siswa dari Arsip.
- * [PERBAIKAN]:
- * 1. Nama Sekolah di bawah judul.
- * 2. Nama Mapel Lengkap.
- * 3. Format Nama Kepala Sekolah (Kapital Nama, Title Benar).
- * 4. [BARU] LockService ditambahkan untuk antrean proses download.
- */
+// --- GENERATE PDF (CACHE TIDAK DIPERLUKAN KARENA PDF SELALU UNIK/JARANG) ---
 function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
-  // 1. Inisialisasi LockService
+  // LockService penting untuk PDF agar tidak tabrakan
   const lock = LockService.getScriptLock();
   
   try {
-    // 2. Tunggu Antrean (maksimal 30 detik)
-    // Jika ada user lain sedang download, proses ini akan pause di sini sampai user lain selesai
     lock.waitLock(30000); 
 
-    // --- MULAI PROSES PDF ---
-
-    // 1. Cari Data Sekolah di Master Sheet
+    // --- AMBIL CACHE ID SEKOLAH JIKA ADA (OPTIMASI KECIL) ---
+    // Kita masih perlu buka SS untuk ambil data nilai, tapi kita bisa skip pencarian NPSN
+    
     const masterSS = SpreadsheetApp.openById(ID_MASTER_SHEET_APP_1);
     const sheetSekolah = masterSS.getSheetByName('Sheet_Sekolah');
     const dataMaster = sheetSekolah.getDataRange().getValues();
@@ -271,23 +326,21 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
     
     if (!rowData) throw new Error("Data sekolah tidak ditemukan (NPSN tidak cocok).");
 
-    const namaSekolah = rowData[1]; // Kolom B
-    const app1DbId = rowData[5];    // Kolom F
-    const kopFileId = rowData[15];  // Kolom P (ID File Kop Surat)
-    const tempatTtd = rowData[19] || ''; // Kolom T
-    const arsipDbId = rowData[21];  // Kolom V
+    const namaSekolah = rowData[1]; 
+    const app1DbId = rowData[5];    
+    const kopFileId = rowData[15];  
+    const tempatTtd = rowData[19] || '';
+    const arsipDbId = rowData[21];  
 
-    // 2. Ambil Info Kepsek & Nama Mapel Lengkap dari App 1
+    // Ambil Info Kepsek & Nama Mapel
     let kepalaSekolah = '.........................';
     let nipKepsek = '-';
     let jenjang = '';
-    let mapelFullName = mapel; // Default ke Kode
+    let mapelFullName = mapel;
     
     if (app1DbId) {
        try {
          const ss1 = SpreadsheetApp.openById(app1DbId);
-         
-         // A. Ambil Data Sekolah
          const dsSheet = ss1.getSheetByName('Data_Sekolah');
          if (dsSheet) {
            const val = dsSheet.getRange('A2:P2').getValues()[0];
@@ -296,7 +349,6 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
            if(val[15]) nipKepsek = val[15];
          }
 
-         // B. Ambil Nama Lengkap Mapel
          const mapelSheetRef = ss1.getSheetByName('Mapel');
          if (mapelSheetRef) {
              const dataMapelRef = mapelSheetRef.getDataRange().getValues();
@@ -311,7 +363,7 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
        } catch(e) { Logger.log("Error ambil data dari App 1: " + e.message); }
     }
 
-    // 3. Ambil Data Nilai dari Arsip
+    // Ambil Data Nilai
     const ssArsip = SpreadsheetApp.openById(arsipDbId);
     const sheet = ssArsip.getSheetByName(sheetName);
     const data = sheet.getDataRange().getValues();
@@ -326,7 +378,6 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
     
     if (idxNilai === -1) throw new Error(`Data nilai '${colTarget}' tidak ditemukan di arsip.`);
     
-    // 4. Filter & Format Data Siswa
     const siswaList = [];
     for (let i = 1; i < data.length; i++) {
        const row = data[i];
@@ -360,12 +411,11 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
        return a.nama.localeCompare(b.nama);
     });
 
-    // 5. Generate PDF HTML
+    // Generate HTML PDF (Sama seperti sebelumnya)
     let kopBase64 = null;
     let headerHtml = '';
 
     if (kopFileId) {
-        Logger.log("Mencoba mengambil kop surat ID: " + kopFileId);
         kopBase64 = _getImageAsBase64DataUrl(kopFileId);
     }
 
@@ -376,7 +426,7 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
         </div>`;
     } else {
       headerHtml = `
-        <div style="text-align:center; border-bottom:3px solid black; padding-bottom:10px; margin-bottom:20px;">
+        <div style="text-align: center; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 20px;">
            <h2 style="margin:0;">${namaSekolah.toUpperCase()}</h2>
         </div>`;
     }
@@ -400,7 +450,6 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
     const tglStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
     const jabatan = (jenjang.includes('M') || jenjang.includes('MTS') || jenjang.includes('MA')) ? "Kepala Madrasah" : "Kepala Sekolah";
     const tahunAjar = sheetName.replace('Arsip ', '');
-
     const kepsekFormatted = formatNamaGelar(kepalaSekolah);
     
     const html = `
@@ -444,22 +493,18 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
   } catch (e) {
     return { success: false, message: e.message };
   } finally {
-    // 3. Lepaskan Lock (Wajib, bahkan jika error)
     lock.releaseLock();
   }
 }
 
-// --- HELPER: DIPERBAIKI UNTUK AKSES DRIVE ---
+// --- HELPER UTILS (Sama dengan App 2) ---
 function _getImageAsBase64DataUrl(fileId) {
   try {
     if (!fileId) return null;
-    
     const file = DriveApp.getFileById(fileId);
     const blob = file.getBlob();
-    
     const contentType = blob.getContentType();
     const base64 = Utilities.base64Encode(blob.getBytes());
-    
     return `data:${contentType};base64,${base64}`;
   } catch (e) {
     Logger.log(`Gagal mengambil gambar (ID: ${fileId}). Error: ${e.message}`);
@@ -481,9 +526,7 @@ function terbilang(n) {
 
 function properCaseGelar(gelarString) {
   if (!gelarString) return '';
-  
   const joiner = gelarString.includes('.') ? ' ' : '.'; 
-
   return gelarString.split(' ') 
     .map(gelarPart => {
       return gelarPart.split('.') 

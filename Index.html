@@ -23,12 +23,39 @@
     .table-container { background: white; border-radius: 10px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow: hidden; }
     .table-responsive { max-height: 70vh; overflow-x: auto; position: relative; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     
-    /* Header Table Sticky */
+    /* Header Table Sticky Default */
     thead th { background-color: #212529 !important; color: white !important; white-space: nowrap; text-align: center; vertical-align: middle; position: sticky; top: 0; z-index: 10; }
     
-    /* Sticky Column Name */
+    /* --- KONFIGURASI STICKY DEFAULT (MODE SINGLE / DETAIL SISWA) --- */
+    /* Default: Kolom 2 (Nama Siswa) yang Sticky */
     tbody td:nth-child(2) { position: sticky; left: 0; z-index: 11; background-color: #fff; border-right: 2px solid #dee2e6; }
     thead th:nth-child(2) { position: sticky; left: 0; z-index: 12; background-color: #212529 !important; border-right: 2px solid #495057; }
+    
+    /* --- KONFIGURASI STICKY KHUSUS MODE RANGE (RENTANG TAHUN) --- */
+    /* Saat tabel punya class 'mode-range', reset kolom 2 agar TIDAK sticky */
+    table.mode-range tbody td:nth-child(2),
+    table.mode-range thead th:nth-child(2) {
+        position: static !important;
+        border-right: 1px solid #dee2e6; /* Reset border ke normal */
+        z-index: auto;
+    }
+
+    /* Saat tabel punya class 'mode-range', buat kolom 1 (Tahun Pelajaran) jadi Sticky */
+    table.mode-range tbody td:nth-child(1) {
+        position: sticky !important;
+        left: 0;
+        z-index: 11;
+        background-color: #fff;
+        border-right: 2px solid #dee2e6;
+        font-weight: bold; /* Opsional: Tebalkan tahun */
+    }
+    table.mode-range thead th:nth-child(1) {
+        position: sticky !important;
+        left: 0;
+        z-index: 12;
+        background-color: #212529 !important;
+        border-right: 2px solid #495057;
+    }
     
     .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
     .d-none { display: none !important; }
@@ -499,6 +526,13 @@
   }
 
   function renderTable() {
+      // --- TAMBAHAN: Reset mode agar Sticky kembali ke Kolom 2 (Nama Siswa) ---
+      const tableElement = document.getElementById('data-table');
+      if (tableElement) {
+          tableElement.classList.remove('mode-range'); 
+      }
+      // -----------------------------------------------------------------------
+
       // Logika render untuk mode Single
       const jenis = document.getElementById('select-jenis').value;
       const headers = globalTableData.headers;
@@ -543,7 +577,6 @@
                 <td>${start + i + 1}</td>
                 <td>${row[1]}</td> <td>${row[2]}</td> <td class="text-center">${row[3]}</td> `;
               
-              // --- [MODIFIKASI MULAI]: Hitung Nilai Manual (Fallback) ---
               let hitungSum = 0;
               let hitungCount = 0;
 
@@ -559,7 +592,7 @@
                   }
               });
               
-              // Tentukan Nilai Akhir (Gunakan Data Sheet jika ada, jika tidak gunakan Hasil Hitung)
+              // Tentukan Nilai Akhir
               const displayJml = (idxJml > -1 && row[idxJml] !== "") 
                   ? row[idxJml] 
                   : (hitungCount > 0 ? parseFloat(hitungSum.toFixed(2)) : 0);
@@ -567,7 +600,6 @@
               const displayRata = (idxRata > -1 && row[idxRata] !== "") 
                   ? row[idxRata] 
                   : (hitungCount > 0 ? (hitungSum / hitungCount).toFixed(2) : 0);
-              // --- [MODIFIKASI SELESAI] ---
               
               // Totals (Tampilkan Hasil)
               tr += `<td class="text-center fw-bold">${displayJml}</td>`;
@@ -585,6 +617,13 @@
   }
   
   function renderTableRange() {
+      // --- TAMBAHAN: Aktifkan mode range (Sticky pindah ke Kolom 1 / Tahun) ---
+      const tableElement = document.getElementById('data-table');
+      if (tableElement) {
+          tableElement.classList.add('mode-range');
+      }
+      // -----------------------------------------------------------------------
+
       // Render sederhana untuk mode Range
       const headers = globalTableData.headers;
       const rows = globalTableData.rows;

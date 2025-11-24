@@ -259,8 +259,18 @@
   </div>
 
   <div id="table-wrapper" class="table-container">
-    <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 id="table-title" class="mb-0 text-secondary">Data Arsip</h5>
+        
+        <div id="export-buttons-container" style="display: none;">
+            <button class="btn btn-sm btn-success me-1" onclick="exportArsipCurrentView('excel')" title="Download Excel">
+                <i class="fas fa-file-excel"></i> Excel
+            </button>
+            <button class="btn btn-sm btn-danger" onclick="exportArsipCurrentView('pdf')" title="Download PDF">
+                <i class="fas fa-file-pdf"></i> PDF
+            </button>
+        </div>
+        
     </div>
     <div class="table-responsive">
       <table class="table table-bordered" id="data-table">
@@ -319,7 +329,7 @@
   // URL APLIKASI UTAMA (Ganti jika perlu)
   const URL_APLIKASI_1 = "https://script.google.com/macros/s/AKfycbynRR8fqaFQTVM4QEonhZLMP_Ee_W3DjMHnLBZ8ZuCbRjv_45Mq9iXPfRVL_M-LvNeK/exec"; 
 
-  // --- HELPER: LOCAL STORAGE CACHE (SOLUSI PERMANEN) ---
+  // --- HELPER: LOCAL STORAGE CACHE ---
   const LSCache = {
     get: function(key) {
       try {
@@ -329,11 +339,9 @@
     },
     set: function(key, value) {
       try {
-        // Simpan data. Jika kuota penuh, abaikan saja (fallback ke server)
         localStorage.setItem(key, JSON.stringify(value));
       } catch(e) { console.warn("LocalStorage penuh, cache dilewati."); }
     },
-    // Membuat key unik berdasarkan ID Arsip agar tidak bentrok antar sekolah
     makeKey: function(suffix) {
       return `ARSIP_V1_${currentArsipDbId}_${suffix}`;
     }
@@ -354,7 +362,6 @@
 
   // --- LOGIN FLOW ---
   function otomatisLoginArsip(npsn) {
-    // Cek Cache Login dulu (Session Browser)
     const cacheKey = `LOGIN_SESSION_${npsn}`;
     const cachedLogin = LSCache.get(cacheKey);
 
@@ -366,7 +373,6 @@
         google.script.run
           .withSuccessHandler(res => {
             if (res.success) {
-              // Simpan sesi login
               LSCache.set(cacheKey, res.data);
               handleLoginSuccess(res.data);
             } else {
@@ -389,7 +395,6 @@
   // --- ERROR HANDLING WITH RETRY ---
   function handleServerError(err, retryFunction) {
     const msg = err.message || err.toString();
-    // Jika error 429 atau traffic, coba lagi otomatis
     if (msg.includes("429") || msg.includes("unavailable") || msg.includes("traffic")) {
        document.getElementById('loader-text').innerText = "Server sibuk, mencoba lagi dalam 3 detik...";
        console.warn("Server sibuk (429), retrying...");
@@ -424,7 +429,7 @@
     } else {
        google.script.run.withSuccessHandler(res => {
           if (res.success) {
-             LSCache.set(cacheKey, res.years); // Simpan selamanya
+             LSCache.set(cacheKey, res.years); 
              populateYearDropdowns(res.years);
           }
        }).withFailureHandler(err => handleServerError(err, loadYears))
@@ -450,6 +455,9 @@
   // --- EVENT HANDLERS ---
   function handleModeChange() {
       const mode = document.getElementById('select-mode').value;
+      
+      // Sembunyikan tombol export saat ganti mode
+      document.getElementById('export-buttons-container').style.display = 'none';
       
       // Elements DOM
       const elSingle = document.getElementById('filter-year-container');
@@ -498,14 +506,13 @@
   function handleJenisChange() {
       const mode = document.getElementById('select-mode').value;
       if (mode === 'single') {
-          // Jika data tabel sudah ada di memori, render ulang saja
           if (globalTableData.rows.length > 0) renderTable(); 
       } else if (mode === 'range') {
           loadRangeData();
       }
   }
 
-  // --- LOGIKA MODE TABEL (SINGLE) - DENGAN CACHE ---
+  // --- LOGIKA MODE TABEL (SINGLE) ---
   function loadTableData(sheetName) {
       const cacheKey = LSCache.makeKey(`DATA_${sheetName}`);
       const cachedData = LSCache.get(cacheKey);
@@ -520,7 +527,7 @@
           google.script.run.withSuccessHandler(res => {
               showLoader(false);
               if(res.success) {
-                  LSCache.set(cacheKey, res); // Simpan selamanya
+                  LSCache.set(cacheKey, res); 
                   processTableData(res);
               } else {
                   alert("Gagal: " + res.message);
@@ -538,7 +545,7 @@
       renderTable();
   }
   
-  // --- LOGIKA MODE RANGE - DENGAN CACHE ---
+  // --- LOGIKA MODE RANGE ---
   function loadRangeData() {
       const start = document.getElementById('select-year-start').value;
       const end = document.getElementById('select-year-end').value;
@@ -557,7 +564,7 @@
            google.script.run.withSuccessHandler(res => {
               showLoader(false);
               if(res.success) {
-                  LSCache.set(cacheKey, res); // Simpan cache range
+                  LSCache.set(cacheKey, res);
                   processRangeData(res);
               } else {
                   alert("Gagal: " + res.message);
@@ -574,7 +581,7 @@
       renderTableRange();
   }
 
-  // --- LOGIKA MODE PDF (DROPDOWN) - DENGAN CACHE ---
+  // --- LOGIKA MODE PDF ---
   function loadDropdownsForPdf(sheetName) {
       const elMapel = document.getElementById('select-mapel');
       const elKelas = document.getElementById('select-kelas');
@@ -596,7 +603,7 @@
             .withSuccessHandler(res => {
                 showLoader(false);
                 if (res.success) {
-                    LSCache.set(cacheKey, res); // Simpan
+                    LSCache.set(cacheKey, res);
                     populatePdfDropdowns(res);
                 } else {
                     alert("Gagal memuat data: " + res.message);
@@ -611,7 +618,6 @@
       const elMapel = document.getElementById('select-mapel');
       const elKelas = document.getElementById('select-kelas');
       
-      // 1. Mapel
       elMapel.innerHTML = '<option value="">-- Pilih Mapel --</option>';
       if (res.mapels.length > 0) {
           res.mapels.forEach(m => {
@@ -624,7 +630,6 @@
           elMapel.innerHTML = '<option value="">Tidak ada Mapel</option>';
       }
 
-      // 2. Kelas
       elKelas.innerHTML = '<option value="semua">Semua Kelas</option>';
       if (res.classes.length > 0) {
           res.classes.forEach(c => {
@@ -655,7 +660,6 @@
       
       showLoader(true, "Membuat PDF Laporan...");
       
-      // PDF TIDAK DI-CACHE KARENA FILE BINARY BESAR & JARANG DIULANG
       google.script.run
         .withSuccessHandler(res => {
             showLoader(false);
@@ -674,11 +678,87 @@
         .generateArsipPdf(currentNpsn, sheetName, mapel, jenis, kelas);
   }
 
+  // --- FUNGSI BARU: EXPORT DATA ---
+  function exportArsipCurrentView(type) {
+      const mode = document.getElementById('select-mode').value;
+      const btnExcel = document.querySelector('#export-buttons-container .btn-success');
+      const btnPdf = document.querySelector('#export-buttons-container .btn-danger');
+      
+      // Nonaktifkan tombol saat proses
+      btnExcel.disabled = true;
+      btnPdf.disabled = true;
+      const originalText = (type === 'excel') ? btnExcel.innerHTML : btnPdf.innerHTML;
+      if(type === 'excel') btnExcel.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+      else btnPdf.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+      // [PERUBAHAN] Ambil jenis nilai dari dropdown
+      const jenisNilai = document.getElementById('select-jenis').value;
+
+      let params = {
+          arsipDbId: currentArsipDbId,
+          type: type, // 'excel' or 'pdf'
+          mode: mode, // 'single' or 'range'
+          jenisNilai: jenisNilai, // <-- PENTING: Kirim jenis nilai ke backend
+          namaSekolah: document.getElementById('dash-nama-sekolah').innerText
+      };
+
+      if (mode === 'single') {
+          params.sheetName = document.getElementById('select-year').value;
+          if (!params.sheetName) { alert("Pilih tahun terlebih dahulu."); resetBtns(); return; }
+          // Judul Laporan Disesuaikan
+          params.title = `REKAPITULASI NILAI ${jenisNilai.toUpperCase()} - ${params.sheetName.replace('Arsip ', '')}`;
+      } else if (mode === 'range') {
+          params.startSheet = document.getElementById('select-year-start').value;
+          params.endSheet = document.getElementById('select-year-end').value;
+          if (!params.startSheet || !params.endSheet) { alert("Pilih rentang tahun."); resetBtns(); return; }
+          params.title = `REKAPITULASI RENTANG TAHUN (${jenisNilai.toUpperCase()})`;
+      }
+
+      google.script.run
+        .withSuccessHandler((response) => {
+            resetBtns();
+            if (response.success) {
+                downloadFileFromBase64(response.base64, response.fileName, response.mimeType);
+            } else {
+                alert("Gagal export: " + response.message);
+            }
+        })
+        .withFailureHandler((e) => {
+            resetBtns();
+            alert("Error server: " + e.message);
+        })
+        .processExportArsip(params);
+
+      function resetBtns() {
+          btnExcel.disabled = false;
+          btnPdf.disabled = false;
+          if(type === 'excel') btnExcel.innerHTML = originalText;
+          else btnPdf.innerHTML = originalText;
+      }
+  }
+
+  function downloadFileFromBase64(base64, fileName, mimeType) {
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], {type: mimeType});
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  }
+
   // --- TABLE RENDERING UTILS ---
   function clearTable() {
       document.getElementById('table-head').innerHTML = '';
       document.getElementById('table-body').innerHTML = '<tr><td colspan="100%" class="text-center p-4 text-muted">Silakan pilih filter tahun.</td></tr>';
       document.getElementById('pagination-controls').style.display = 'none';
+      document.getElementById('export-buttons-container').style.display = 'none';
   }
 
   function renderTable() {
@@ -702,7 +782,6 @@
          else if(h.endsWith(`_${jenis}`)) idxMapel.push(i);
       });
       
-      // [UPDATE] Header dengan class col-mapel-fixed
       let hHtml = `<tr><th width="30">No</th><th width="200">Nama Siswa</th><th width="100">NISN</th><th width="60">Kelas</th>`;
       idxMapel.forEach(i => hHtml += `<th class="col-mapel-fixed">${headers[i].replace('_'+jenis,'')}</th>`);
       hHtml += `<th class="bg-primary text-white">Jumlah</th><th class="bg-primary text-white">Rata-Rata</th><th>Status</th></tr>`;
@@ -720,7 +799,11 @@
       
       if(viewRows.length === 0) {
           tbody.innerHTML = '<tr><td colspan="100%" class="text-center">Data tidak ditemukan.</td></tr>';
+          document.getElementById('export-buttons-container').style.display = 'none';
       } else {
+          // Tampilkan tombol export karena data ada
+          document.getElementById('export-buttons-container').style.display = 'block';
+
           viewRows.forEach((row, i) => {
               let tr = `<tr>
                 <td>${start + i + 1}</td>
@@ -731,7 +814,6 @@
 
               idxMapel.forEach(idx => {
                   const val = row[idx];
-                  // [UPDATE] Sel data dengan class col-mapel-fixed
                   tr += `<td class="col-mapel-fixed text-center">${val||''}</td>`;
                   if (val !== "" && val !== null && !isNaN(parseFloat(val))) {
                       hitungSum += parseFloat(val);
@@ -766,10 +848,15 @@
       
       thead.innerHTML = ''; tbody.innerHTML = '';
       document.getElementById('pagination-controls').style.display = 'none';
+
+      if (rows.length > 0) {
+         document.getElementById('export-buttons-container').style.display = 'block';
+      } else {
+         document.getElementById('export-buttons-container').style.display = 'none';
+      }
       
       let hHtml = '<tr>';
       headers.forEach(h => {
-         // [UPDATE] Gunakan class col-mapel-fixed untuk mapel
          let style = '';
          let classList = '';
          if (h==='Jumlah'||h==='Rata-Rata') {
@@ -785,7 +872,6 @@
       rows.forEach(row => {
           let rHtml = '<tr>';
           row.forEach((cell, i) => {
-              // [UPDATE] Gunakan class col-mapel-fixed untuk mapel
               let headerName = headers[i];
               let classList = '';
               if (headerName==='Jumlah'||headerName==='Rata-Rata') {
@@ -793,7 +879,7 @@
               } else if (i > 0) {
                   classList = 'col-mapel-fixed text-center';
               } else {
-                  classList = 'text-center'; // Tahun
+                  classList = 'text-center'; 
               }
               rHtml += `<td class="${classList}">${cell}</td>`;
           });

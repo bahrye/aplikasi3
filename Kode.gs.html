@@ -584,3 +584,226 @@ function formatNamaGelar(namaLengkap) {
     return nama.toUpperCase();
   }
 }
+
+/**
+ * [DIPERBARUI] Fungsi Utama Export Arsip (Excel & PDF)
+ * Melakukan filtering kolom agar sesuai dengan tampilan website.
+ */
+function processExportArsip(params) {
+  try {
+    let headers = [];
+    let rows = [];
+    let fileName = "";
+    
+    // 1. Ambil Data
+    if (params.mode === 'single') {
+      const data = getArsipData(params.arsipDbId, params.sheetName);
+      if (!data.success) throw new Error(data.message);
+      
+      const rawHeaders = data.headers;
+      const rawRows = data.rows;
+      const jenis = params.jenisNilai; // Contoh: "Ujian"
+
+      // --- FILTERING LOGIC (AGAR SAMA DENGAN WEBSITE) ---
+      const indicesToKeep = [];
+      const cleanHeaders = [];
+
+      // Identifikasi kolom yang akan diambil
+      rawHeaders.forEach((h, index) => {
+        // 1. Kolom Identitas (Selalu Ikut)
+        if (['No', 'Nama Siswa', 'NISN', 'Kelas', 'Status'].includes(h)) {
+          indicesToKeep.push(index);
+          cleanHeaders.push(h);
+        } 
+        // 2. Kolom Jumlah & Rata-rata (Sesuai Jenis)
+        else if (h === `Jumlah_${jenis}`) {
+          indicesToKeep.push(index);
+          cleanHeaders.push("Jumlah");
+        } 
+        else if (h === `Rata_${jenis}`) {
+          indicesToKeep.push(index);
+          cleanHeaders.push("Rata-Rata");
+        } 
+        // 3. Kolom Mapel (Sesuai Jenis) - Contoh: QH_Ujian -> QH
+        else if (h.endsWith(`_${jenis}`)) {
+          indicesToKeep.push(index);
+          cleanHeaders.push(h.replace(`_${jenis}`, '')); // Hapus suffix
+        }
+      });
+
+      // Buat array baris baru berdasarkan indeks yang dipilih
+      const filteredRows = rawRows.map(row => {
+        return indicesToKeep.map(i => row[i]);
+      });
+
+      // Update variabel utama
+      headers = cleanHeaders;
+      rows = filteredRows;
+      fileName = `Arsip_${params.sheetName}_${params.jenisNilai}_${params.namaSekolah}`;
+    } 
+    else if (params.mode === 'range') {
+      // Mode Range sudah difilter oleh fungsi getArsipDataRange, jadi aman
+      const data = getArsipDataRange(params.arsipDbId, params.startSheet, params.endSheet, params.jenisNilai);
+      if (!data.success) throw new Error(data.message);
+      headers = data.headers;
+      rows = data.rows;
+      fileName = `Rekap_Rentang_${params.jenisNilai}_${params.namaSekolah}`;
+    }
+    
+    if (rows.length === 0) throw new Error("Tidak ada data untuk diekspor.");
+
+    // 2. Generate File sesuai Tipe
+    if (params.type === 'excel') {
+      return generateExcelArsip(headers, rows, fileName, params.title, params.namaSekolah);
+    } else {
+      return generatePdfArsip(headers, rows, fileName, params.title, params.namaSekolah, params.mode);
+    }
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * [HELPER] Generate Excel Blob
+ */
+function generateExcelArsip(headers, rows, fileName, title, namaSekolah) {
+  let tempId = null;
+  try {
+    const ss = SpreadsheetApp.create("TEMP_EXPORT");
+    tempId = ss.getId();
+    const sheet = ss.getSheets()[0];
+    
+    // Header Judul
+    sheet.getRange("A1").setValue(namaSekolah).setFontWeight("bold").setFontSize(12);
+    sheet.getRange("A2").setValue(title).setFontWeight("bold").setFontSize(11);
+    
+    // Header Tabel
+    const startRow = 4;
+    sheet.getRange(startRow, 1, 1, headers.length).setValues([headers])
+         .setFontWeight("bold")
+         .setBackground("#d9ead3")
+         .setBorder(true, true, true, true, true, true);
+    
+    // Data Tabel
+    // Pastikan semua data dikonversi ke string/number yang aman
+    const safeRows = rows.map(r => r.map(c => (c === null || c === undefined) ? "" : c));
+    
+    sheet.getRange(startRow + 1, 1, safeRows.length, headers.length).setValues(safeRows)
+         .setBorder(true, true, true, true, true, true);
+    
+    sheet.autoResizeColumns(1, headers.length);
+    
+    SpreadsheetApp.flush();
+    
+    const url = "https://docs.google.com/spreadsheets/d/" + tempId + "/export?format=xlsx";
+    const token = ScriptApp.getOAuthToken();
+    const response = UrlFetchApp.fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+    
+    return {
+      success: true,
+      base64: Utilities.base64Encode(response.getBlob().getBytes()),
+      fileName: fileName + ".xlsx",
+      mimeType: MimeType.MICROSOFT_EXCEL
+    };
+    
+  } catch(e) {
+    throw e;
+  } finally {
+    if (tempId) try { DriveApp.getFileById(tempId).setTrashed(true); } catch(e){}
+  }
+}
+
+/**
+ * [HELPER] Generate PDF Blob (HTML to PDF)
+ * Menggunakan header dan data yang SUDAH DIBERSIHKAN oleh fungsi di atas.
+ */
+function generatePdfArsip(headers, rows, fileName, title, namaSekolah, mode) {
+  
+  // Buat Header Tabel HTML
+  let tableHeaderHtml = '<tr style="background-color: #f2f2f2;">';
+  headers.forEach(h => {
+    let align = 'center';
+    // Align kiri untuk Nama Siswa (jika ada)
+    if (h === 'Nama Siswa') align = 'left';
+    
+    tableHeaderHtml += `<th style="border: 1px solid #000; padding: 6px; text-align: ${align}; font-size: 10px; font-weight: bold;">${h}</th>`;
+  });
+  tableHeaderHtml += '</tr>';
+
+  // Buat Body Tabel HTML
+  let tableBodyHtml = '';
+  rows.forEach((row, index) => {
+    tableBodyHtml += `<tr>`;
+    row.forEach((cell, i) => {
+       let style = 'border: 1px solid #000; padding: 4px; font-size: 9px;';
+       let val = (cell === null || cell === undefined) ? '' : cell;
+       
+       // Cek nama kolom berdasarkan index header
+       const headerName = headers[i];
+       
+       // Styling khusus
+       if (headerName === 'Nama Siswa') {
+          style += ' text-align: left; white-space: nowrap;';
+       } else if (headerName === 'Tahun Pelajaran' || headerName === 'No' || headerName === 'Kelas' || headerName === 'NISN') {
+          style += ' text-align: center;';
+       } else if (headerName === 'Jumlah' || headerName === 'Rata-Rata') {
+          style += ' text-align: center; font-weight: bold; background-color: #f9f9f9;';
+       } else {
+          // Nilai Mapel
+          style += ' text-align: center;';
+       }
+       
+       tableBodyHtml += `<td style="${style}">${val}</td>`;
+    });
+    tableBodyHtml += `</tr>`;
+  });
+
+  const htmlContent = `
+    <html>
+    <head>
+      <style>
+        @page { size: A4 landscape; margin: 1cm; } 
+        body { font-family: Arial, sans-serif; }
+        h2 { text-align: center; margin: 0 0 5px 0; text-transform: uppercase; font-size: 16pt; }
+        h3 { text-align: center; margin: 0 0 15px 0; text-transform: uppercase; font-size: 12pt; font-weight: bold; text-decoration: underline; }
+        p.meta { text-align: center; font-size: 9pt; color: #444; margin-bottom: 10px; font-style: italic; }
+        table { width: 100%; border-collapse: collapse; margin-top: 0; }
+      </style>
+    </head>
+    <body>
+      <h2>${namaSekolah}</h2>
+      <h3>${title}</h3>
+      <p class="meta">Dicetak pada: ${new Date().toLocaleString('id-ID')}</p>
+      
+      <table>
+        <thead>${tableHeaderHtml}</thead>
+        <tbody>${tableBodyHtml}</tbody>
+      </table>
+    </body>
+    </html>
+  `;
+
+  const blob = Utilities.newBlob(htmlContent, MimeType.HTML).getAs(MimeType.PDF);
+  const base64 = Utilities.base64Encode(blob.getBytes());
+
+  return {
+      success: true,
+      base64: base64,
+      fileName: fileName + ".pdf",
+      mimeType: MimeType.PDF
+  };
+}
+
+/**
+ * FUNGSI INI HANYA UNTUK MEMICU PERMINTAAN IZIN BARU.
+ * 1. Simpan file ini.
+ * 2. Pilih fungsi "_triggerUrlFetchPermission" dari dropdown di atas editor.
+ * 3. Klik "Run" (Jalankan).
+ * 4. Saat diminta, berikan izin (Review Permissions -> Allow).
+ * 5. Setelah sukses (atau error "Google"), izin sudah tersimpan.
+ */
+function _triggerUrlFetchPermission() {
+  // Memaksa script meminta izin akses jaringan eksternal
+  UrlFetchApp.fetch("https://www.google.com");
+}

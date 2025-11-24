@@ -21,25 +21,69 @@
     .app-header { background: linear-gradient(135deg, #0d6efd, #0a58ca); color: white; padding: 15px 20px; border-radius: 0 0 15px 15px; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     .main-content { max-width: 100%; margin: 0 auto; padding: 15px; display: none; }
     .table-container { background: white; border-radius: 10px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow: hidden; }
-    .table-responsive { max-height: 70vh; overflow-x: auto; position: relative; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     
-    /* --- KONFIGURASI STICKY TABLE --- */
+    .table-responsive { 
+        max-height: 70vh; 
+        overflow-x: auto; 
+        position: relative; 
+        overscroll-behavior: contain; 
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 5px; 
+    }
     
+    /* --- [UPDATE] GLOBAL TABLE STYLING (LEBIH BESAR & LEGA) --- */
+    .table th, .table td {
+        padding: 14px 20px !important;     /* Jarak teks ke garis tepi tetap lega */
+        vertical-align: middle !important; /* Teks selalu di tengah vertikal */
+        border: 1px solid #dee2e6;
+        font-size: 16px; /* <-- DIPERBESAR: Menjadi 16px (sebelumnya 14px) */
+    }
+
     /* Header Table Selalu Sticky di Atas */
-    thead th { background-color: #212529 !important; color: white !important; white-space: nowrap; text-align: center; vertical-align: middle; position: sticky; top: 0; z-index: 10; }
+    thead th { 
+        background-color: #212529 !important; 
+        color: white !important; 
+        white-space: nowrap; 
+        text-align: center; 
+        position: sticky; 
+        top: 0; 
+        z-index: 10; 
+        box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
+        font-size: 16px; /* <-- HEADER JUGA DIPERBESAR */
+    }
     
     /* --- DEFAULT: MODE SINGLE (Detail Siswa) --- */
-    /* Kolom ke-2 (Nama Siswa) yang Sticky */
-    tbody td:nth-child(2) { position: sticky; left: 0; z-index: 11; background-color: #fff; border-right: 2px solid #dee2e6; }
-    thead th:nth-child(2) { position: sticky; left: 0; z-index: 12; background-color: #212529 !important; border-right: 2px solid #495057; }
+    
+    /* Kolom ke-2 (Nama Siswa) - FULL 1 BARIS & LEBAR */
+    table:not(.mode-range) tbody td:nth-child(2),
+    table:not(.mode-range) thead th:nth-child(2) {
+        position: sticky; 
+        left: 0; 
+        z-index: 11; 
+        
+        /* Lebar Minimal yang Luas */
+        min-width: 350px !important; 
+        width: auto !important; 
+
+        /* Paksa 1 Baris & Tampilkan Full */
+        white-space: nowrap !important; 
+        
+        border-right: 2px solid #dee2e6;
+    }
+
+    /* Background khusus kolom sticky agar tidak transparan */
+    table:not(.mode-range) tbody td:nth-child(2) { background-color: #fff; }
+    table:not(.mode-range) thead th:nth-child(2) { background-color: #212529 !important; z-index: 12; border-right: 2px solid #495057; }
     
     /* --- KHUSUS: MODE RANGE (Rentang Tahun) --- */
-    /* Reset kolom ke-2 agar TIDAK sticky */
+    
+    /* Reset kolom ke-2 agar TIDAK sticky di mode range */
     table.mode-range tbody td:nth-child(2),
     table.mode-range thead th:nth-child(2) {
         position: static !important;
         border-right: 1px solid #dee2e6;
         z-index: auto;
+        min-width: auto !important;
     }
 
     /* Buat kolom ke-1 (Tahun Pelajaran) menjadi Sticky */
@@ -50,6 +94,7 @@
         background-color: #fff;
         border-right: 2px solid #dee2e6;
         font-weight: bold;
+        min-width: 150px;
     }
     table.mode-range thead th:nth-child(1) {
         position: sticky !important;
@@ -59,45 +104,40 @@
         border-right: 2px solid #495057;
     }
     
+    /* --- STYLE: KOLOM MAPEL RAPI (FIXED WIDTH) --- */
+    .col-mapel-fixed {
+        min-width: 110px; 
+        width: 110px;
+        max-width: 110px;
+        text-align: center !important;
+        vertical-align: middle !important;
+        white-space: nowrap;       
+        overflow: hidden;          
+        text-overflow: ellipsis;   
+    }
+    
     .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
     .d-none { display: none !important; }
     
-    /* PDF AREA STYLE - DIPERBAIKI */
     #pdf-area { background-color: #e9ecef; padding: 30px; border-radius: 10px; text-align: center; border: 2px dashed #ced4da; margin-top: 20px; }
-    
-    /* HANYA ubah ikon utama PDF, jangan ikon tombol */
     .pdf-main-icon { font-size: 4rem; color: #dc3545; margin-bottom: 15px; }
-    
-    /* Pastikan tombol download ukurannya pas */
     #btn-download-pdf { font-weight: 600; font-size: 14px; }
-    #btn-download-pdf i { font-size: 14px; color: white; } /* Paksa ikon tombol putih */
+    #btn-download-pdf i { font-size: 14px; color: white; } 
 
-    /* --- CSS FOOTER UNIVERSAL (Penyesuaian untuk App 3) --- */
     .universal-footer {
       width: 100%;
       padding: 30px 15px 25px 15px;
-      margin-top: auto; /* Dorong ke bawah jika menggunakan flex */
+      margin-top: auto; 
       text-align: center;
       font-size: 13px;
       color: #6c757d;
       background-color: transparent;
-      border-top: 1px solid #dee2e6; /* Opsional: Garis pemisah tipis */
+      border-top: 1px solid #dee2e6; 
     }
+    .universal-footer a { color: inherit; text-decoration: none; transition: color 0.2s; }
+    .universal-footer a:hover { color: #0d6efd; text-decoration: underline; }
+    .universal-footer p { margin: 0; }
 
-    .universal-footer a {
-      color: inherit;
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
-    .universal-footer a:hover {
-      color: #0d6efd;
-      text-decoration: underline;
-    }
-
-    .universal-footer p {
-      margin: 0;
-    }
   </style>
 </head>
 <body>
@@ -201,7 +241,7 @@
         <h5 id="table-title" class="mb-0 text-secondary">Data Arsip</h5>
     </div>
     <div class="table-responsive">
-      <table class="table table-bordered table-sm" id="data-table">
+      <table class="table table-bordered" id="data-table">
         <thead id="table-head"></thead>
         <tbody id="table-body"><tr><td class="text-center text-muted p-4">Silakan pilih filter tahun.</td></tr></tbody>
       </table>
@@ -235,7 +275,8 @@
     </a>
   </footer>
 
-</div> <script>
+</div> 
+<script>
   document.addEventListener("DOMContentLoaded", function() {
       try {
         const yearSpan = document.getElementById('footer-year-app3');
@@ -611,7 +652,7 @@
         .generateArsipPdf(currentNpsn, sheetName, mapel, jenis, kelas);
   }
 
-  // --- TABLE RENDERING UTILS (TIDAK BERUBAH) ---
+  // --- TABLE RENDERING UTILS ---
   function clearTable() {
       document.getElementById('table-head').innerHTML = '';
       document.getElementById('table-body').innerHTML = '<tr><td colspan="100%" class="text-center p-4 text-muted">Silakan pilih filter tahun.</td></tr>';
@@ -639,8 +680,9 @@
          else if(h.endsWith(`_${jenis}`)) idxMapel.push(i);
       });
       
+      // [UPDATE] Header dengan class col-mapel-fixed
       let hHtml = `<tr><th width="30">No</th><th width="200">Nama Siswa</th><th width="100">NISN</th><th width="60">Kelas</th>`;
-      idxMapel.forEach(i => hHtml += `<th>${headers[i].replace('_'+jenis,'')}</th>`);
+      idxMapel.forEach(i => hHtml += `<th class="col-mapel-fixed">${headers[i].replace('_'+jenis,'')}</th>`);
       hHtml += `<th class="bg-primary text-white">Jumlah</th><th class="bg-primary text-white">Rata-Rata</th><th>Status</th></tr>`;
       thead.innerHTML = hHtml;
       
@@ -667,7 +709,8 @@
 
               idxMapel.forEach(idx => {
                   const val = row[idx];
-                  tr += `<td class="text-center">${val||''}</td>`;
+                  // [UPDATE] Sel data dengan class col-mapel-fixed
+                  tr += `<td class="col-mapel-fixed text-center">${val||''}</td>`;
                   if (val !== "" && val !== null && !isNaN(parseFloat(val))) {
                       hitungSum += parseFloat(val);
                       hitungCount++;
@@ -704,8 +747,15 @@
       
       let hHtml = '<tr>';
       headers.forEach(h => {
-         let style = (h==='Jumlah'||h==='Rata-Rata') ? 'class="bg-primary text-white"' : '';
-         hHtml += `<th ${style}>${h}</th>`;
+         // [UPDATE] Gunakan class col-mapel-fixed untuk mapel
+         let style = '';
+         let classList = '';
+         if (h==='Jumlah'||h==='Rata-Rata') {
+             style = 'class="bg-primary text-white"';
+         } else if (h !== 'Tahun Pelajaran') {
+             classList = 'class="col-mapel-fixed"';
+         }
+         hHtml += `<th ${style} ${classList}>${h}</th>`;
       });
       hHtml += '</tr>';
       thead.innerHTML = hHtml;
@@ -713,8 +763,17 @@
       rows.forEach(row => {
           let rHtml = '<tr>';
           row.forEach((cell, i) => {
-              let style = (headers[i]==='Jumlah'||headers[i]==='Rata-Rata') ? 'fw-bold text-center' : (i>0 ? 'text-center' : '');
-              rHtml += `<td class="${style}">${cell}</td>`;
+              // [UPDATE] Gunakan class col-mapel-fixed untuk mapel
+              let headerName = headers[i];
+              let classList = '';
+              if (headerName==='Jumlah'||headerName==='Rata-Rata') {
+                  classList = 'fw-bold text-center';
+              } else if (i > 0) {
+                  classList = 'col-mapel-fixed text-center';
+              } else {
+                  classList = 'text-center'; // Tahun
+              }
+              rHtml += `<td class="${classList}">${cell}</td>`;
           });
           rHtml += '</tr>';
           tbody.innerHTML += rHtml;

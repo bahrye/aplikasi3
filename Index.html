@@ -253,7 +253,28 @@
   let currentPage = 1;
   let rowsPerPage = 25;
   
+  // URL APLIKASI UTAMA (Ganti jika perlu)
   const URL_APLIKASI_1 = "https://script.google.com/macros/s/AKfycbynRR8fqaFQTVM4QEonhZLMP_Ee_W3DjMHnLBZ8ZuCbRjv_45Mq9iXPfRVL_M-LvNeK/exec"; 
+
+  // --- HELPER: LOCAL STORAGE CACHE (SOLUSI PERMANEN) ---
+  const LSCache = {
+    get: function(key) {
+      try {
+        const data = localStorage.getItem(key);
+        return data ? JSON.parse(data) : null;
+      } catch(e) { return null; }
+    },
+    set: function(key, value) {
+      try {
+        // Simpan data. Jika kuota penuh, abaikan saja (fallback ke server)
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch(e) { console.warn("LocalStorage penuh, cache dilewati."); }
+    },
+    // Membuat key unik berdasarkan ID Arsip agar tidak bentrok antar sekolah
+    makeKey: function(suffix) {
+      return `ARSIP_V1_${currentArsipDbId}_${suffix}`;
+    }
+  };
 
   // --- INITIALIZATION ---
   document.addEventListener('DOMContentLoaded', function() {
@@ -270,31 +291,60 @@
 
   // --- LOGIN FLOW ---
   function otomatisLoginArsip(npsn) {
-    document.getElementById('loader-text').innerText = "Memverifikasi Arsip Sekolah...";
-    google.script.run
-      .withSuccessHandler(res => {
-        if (res.success) {
-          currentArsipDbId = res.data.arsipDbId;
-          document.getElementById('dash-nama-sekolah').innerText = res.data.namaSekolah;
-          document.getElementById('loader').style.display = 'none';
-          document.getElementById('view-dashboard').style.display = 'block';
-          loadYears();
-        } else {
-          tampilkanError(res.message);
-        }
-      })
-      .withFailureHandler(err => tampilkanError("Koneksi Error: " + err.message))
-      .loginArsip(npsn);
+    // Cek Cache Login dulu (Session Browser)
+    const cacheKey = `LOGIN_SESSION_${npsn}`;
+    const cachedLogin = LSCache.get(cacheKey);
+
+    if (cachedLogin) {
+        console.log("Login: Menggunakan Cache Browser");
+        handleLoginSuccess(cachedLogin);
+    } else {
+        document.getElementById('loader-text').innerText = "Memverifikasi Arsip Sekolah...";
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res.success) {
+              // Simpan sesi login
+              LSCache.set(cacheKey, res.data);
+              handleLoginSuccess(res.data);
+            } else {
+              tampilkanError(res.message);
+            }
+          })
+          .withFailureHandler(err => handleServerError(err, () => otomatisLoginArsip(npsn)))
+          .loginArsip(npsn);
+    }
+  }
+
+  function handleLoginSuccess(data) {
+      currentArsipDbId = data.arsipDbId;
+      document.getElementById('dash-nama-sekolah').innerText = data.namaSekolah;
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('view-dashboard').style.display = 'block';
+      loadYears();
+  }
+
+  // --- ERROR HANDLING WITH RETRY ---
+  function handleServerError(err, retryFunction) {
+    const msg = err.message || err.toString();
+    // Jika error 429 atau traffic, coba lagi otomatis
+    if (msg.includes("429") || msg.includes("unavailable") || msg.includes("traffic")) {
+       document.getElementById('loader-text').innerText = "Server sibuk, mencoba lagi dalam 3 detik...";
+       console.warn("Server sibuk (429), retrying...");
+       setTimeout(retryFunction, 3000);
+    } else {
+       tampilkanError("Koneksi Error: " + msg);
+    }
   }
 
   function tampilkanError(pesan) {
     document.getElementById('loader').style.display = 'none';
     document.getElementById('view-dashboard').style.display = 'none';
     document.getElementById('view-error').style.display = 'block';
-    // Optional: set error message text
+    console.error(pesan);
   }
 
   function logout() { window.top.location.href = URL_APLIKASI_1; }
+  
   function showLoader(show, text="Memuat data...") {
      const l = document.getElementById('loader');
      document.getElementById('loader-text').innerText = text;
@@ -303,74 +353,72 @@
 
   // --- DATA LOADING ---
   function loadYears() {
-    google.script.run.withSuccessHandler(res => {
+    const cacheKey = LSCache.makeKey("YEARS_LIST");
+    const cachedYears = LSCache.get(cacheKey);
+
+    if (cachedYears) {
+       populateYearDropdowns(cachedYears);
+    } else {
+       google.script.run.withSuccessHandler(res => {
+          if (res.success) {
+             LSCache.set(cacheKey, res.years); // Simpan selamanya
+             populateYearDropdowns(res.years);
+          }
+       }).withFailureHandler(err => handleServerError(err, loadYears))
+         .getArsipYears(currentArsipDbId);
+    }
+  }
+
+  function populateYearDropdowns(years) {
       const selects = ['select-year', 'select-year-start', 'select-year-end'];
       selects.forEach(id => {
          const el = document.getElementById(id);
          const def = id === 'select-year' ? '-- Pilih Tahun --' : (id.includes('start')?'-- Awal --':'-- Akhir --');
          el.innerHTML = `<option value="">${def}</option>`;
-         if (res.success) {
-            res.years.forEach(y => {
-              let opt = document.createElement('option');
-              opt.value = y;
-              opt.innerText = y.replace('Arsip ', '');
-              el.appendChild(opt);
-            });
-         }
+         years.forEach(y => {
+            let opt = document.createElement('option');
+            opt.value = y;
+            opt.innerText = y.replace('Arsip ', '');
+            el.appendChild(opt);
+         });
       });
-    }).getArsipYears(currentArsipDbId);
   }
 
   // --- EVENT HANDLERS ---
-  
   function handleModeChange() {
       const mode = document.getElementById('select-mode').value;
       
-      // Elements
+      // Elements DOM
       const elSingle = document.getElementById('filter-year-container');
       const elRange = document.getElementById('filter-range-container');
       const elSearch = document.getElementById('filter-search-container');
       const elRows = document.getElementById('filter-rows-container');
       const elMapel = document.getElementById('filter-mapel-container');
       const elKelas = document.getElementById('filter-kelas-container');
-      
       const divTable = document.getElementById('table-wrapper');
       const divPdf = document.getElementById('pdf-area');
-
-      // Reset UI
-      elSingle.classList.add('d-none');
-      elRange.classList.add('d-none');
-      elSearch.classList.add('d-none');
-      elRows.classList.add('d-none');
-      elMapel.classList.add('d-none');
-      elKelas.classList.add('d-none');
-      divTable.classList.add('d-none');
-      divPdf.classList.add('d-none');
       
-      // Reset Inputs
+      // Helper untuk hide/show
+      const hide = (el) => el.classList.add('d-none');
+      const show = (el) => el.classList.remove('d-none');
+
+      // Reset
+      [elSingle, elRange, elSearch, elRows, elMapel, elKelas, divTable, divPdf].forEach(hide);
+      
       document.getElementById('select-year').value = "";
       document.getElementById('select-mapel').innerHTML = '<option value="">-- Pilih Mapel Dulu --</option>';
       document.getElementById('select-kelas').innerHTML = '<option value="semua">Semua Kelas</option>';
 
       if (mode === 'single') {
-          elSingle.classList.remove('d-none');
-          elSearch.classList.remove('d-none');
-          elRows.classList.remove('d-none');
-          divTable.classList.remove('d-none');
+          [elSingle, elSearch, elRows, divTable].forEach(show);
           document.getElementById('table-title').innerText = "Data Arsip";
           clearTable();
-      } 
-      else if (mode === 'range') {
-          elRange.classList.remove('d-none');
-          divTable.classList.remove('d-none');
+      } else if (mode === 'range') {
+          [elRange, divTable].forEach(show);
           document.getElementById('table-title').innerText = "Rekapitulasi Rentang Tahun";
           clearTable();
-      } 
-      else if (mode === 'pdf') {
-          elSingle.classList.remove('d-none'); // Butuh pilih tahun
-          elMapel.classList.remove('d-none');  // Butuh pilih mapel
-          elKelas.classList.remove('d-none');  // Butuh pilih kelas
-          divPdf.classList.remove('d-none');   // Tampilkan area PDF
+      } else if (mode === 'pdf') {
+          [elSingle, elMapel, elKelas, divPdf].forEach(show);
           document.getElementById('btn-download-pdf').disabled = true;
       }
   }
@@ -378,137 +426,160 @@
   function handleYearChange() {
       const mode = document.getElementById('select-mode').value;
       const sheetName = document.getElementById('select-year').value;
-      
       if (!sheetName) return;
-
-      if (mode === 'single') {
-          // Mode Single: Load Data Tabel
-          loadTableData(sheetName);
-      } else if (mode === 'pdf') {
-          // Mode PDF: Load Mapel & Kelas untuk dropdown
-          loadDropdownsForPdf(sheetName);
-      }
+      
+      if (mode === 'single') loadTableData(sheetName);
+      else if (mode === 'pdf') loadDropdownsForPdf(sheetName);
   }
   
   function handleJenisChange() {
       const mode = document.getElementById('select-mode').value;
       if (mode === 'single') {
-          if (globalTableData.rows.length > 0) renderTable(); // Re-render dari cache
+          // Jika data tabel sudah ada di memori, render ulang saja
+          if (globalTableData.rows.length > 0) renderTable(); 
       } else if (mode === 'range') {
-          loadRangeData(); // Reload server
+          loadRangeData();
       }
   }
 
-  // --- LOGIKA MODE TABEL (SINGLE) ---
+  // --- LOGIKA MODE TABEL (SINGLE) - DENGAN CACHE ---
   function loadTableData(sheetName) {
-      showLoader(true, "Mengambil data arsip...");
+      const cacheKey = LSCache.makeKey(`DATA_${sheetName}`);
+      const cachedData = LSCache.get(cacheKey);
+
       document.getElementById('table-title').innerText = "Data Arsip: " + sheetName.replace('Arsip ', '');
-      
-      google.script.run.withSuccessHandler(res => {
-          showLoader(false);
-          if(res.success) {
-              globalTableData.headers = res.headers;
-              globalTableData.rows = res.rows;
-              filteredRows = res.rows;
-              currentPage = 1;
-              renderTable();
-          } else {
-              alert("Gagal: " + res.message);
-          }
-      }).getArsipData(currentArsipDbId, sheetName);
+
+      if (cachedData) {
+          console.log("Tabel: Memuat dari Cache Browser");
+          processTableData(cachedData);
+      } else {
+          showLoader(true, "Mengunduh data arsip (Hanya sekali)...");
+          google.script.run.withSuccessHandler(res => {
+              showLoader(false);
+              if(res.success) {
+                  LSCache.set(cacheKey, res); // Simpan selamanya
+                  processTableData(res);
+              } else {
+                  alert("Gagal: " + res.message);
+              }
+          }).withFailureHandler(err => handleServerError(err, () => loadTableData(sheetName)))
+            .getArsipData(currentArsipDbId, sheetName);
+      }
+  }
+
+  function processTableData(res) {
+      globalTableData.headers = res.headers;
+      globalTableData.rows = res.rows;
+      filteredRows = res.rows;
+      currentPage = 1;
+      renderTable();
   }
   
-  // --- LOGIKA MODE RANGE ---
+  // --- LOGIKA MODE RANGE - DENGAN CACHE ---
   function loadRangeData() {
       const start = document.getElementById('select-year-start').value;
       const end = document.getElementById('select-year-end').value;
       const jenis = document.getElementById('select-jenis').value;
       
       if(!start || !end) return;
+
+      const cacheKey = LSCache.makeKey(`RANGE_${start}_${end}_${jenis}`);
+      const cachedData = LSCache.get(cacheKey);
       
-      showLoader(true, "Menganalisis rentang tahun...");
-      google.script.run.withSuccessHandler(res => {
-          showLoader(false);
-          if(res.success) {
-              globalTableData.headers = res.headers;
-              globalTableData.rows = res.rows;
-              filteredRows = res.rows; // No client filtering for range yet
-              renderTableRange();
-          } else {
-              alert("Gagal: " + res.message);
-          }
-      }).getArsipDataRange(currentArsipDbId, start, end, jenis);
+      if (cachedData) {
+           console.log("Range: Memuat dari Cache Browser");
+           processRangeData(cachedData);
+      } else {
+           showLoader(true, "Menganalisis rentang tahun (Proses Server)...");
+           google.script.run.withSuccessHandler(res => {
+              showLoader(false);
+              if(res.success) {
+                  LSCache.set(cacheKey, res); // Simpan cache range
+                  processRangeData(res);
+              } else {
+                  alert("Gagal: " + res.message);
+              }
+           }).withFailureHandler(err => handleServerError(err, loadRangeData))
+             .getArsipDataRange(currentArsipDbId, start, end, jenis);
+      }
   }
 
-  // --- LOGIKA MODE PDF (DIPERBAIKI: Mencegah Error 429) ---
+  function processRangeData(res) {
+      globalTableData.headers = res.headers;
+      globalTableData.rows = res.rows;
+      filteredRows = res.rows; 
+      renderTableRange();
+  }
+
+  // --- LOGIKA MODE PDF (DROPDOWN) - DENGAN CACHE ---
   function loadDropdownsForPdf(sheetName) {
       const elMapel = document.getElementById('select-mapel');
       const elKelas = document.getElementById('select-kelas');
       const btnPdf = document.getElementById('btn-download-pdf');
       
-      // Reset UI
-      elMapel.innerHTML = '<option>Memuat...</option>';
-      elMapel.disabled = true;
-      elKelas.innerHTML = '<option>Memuat...</option>';
-      elKelas.disabled = true;
+      elMapel.innerHTML = '<option>Memuat...</option>'; elMapel.disabled = true;
+      elKelas.innerHTML = '<option>Memuat...</option>'; elKelas.disabled = true;
       btnPdf.disabled = true;
-      
-      // Tampilkan Loader
-      showLoader(true, "Menyiapkan data PDF...");
 
-      // PANGGILAN TUNGGAL KE SERVER (Single Request)
-      google.script.run
-        .withSuccessHandler(res => {
-            showLoader(false); // Matikan loader setelah selesai
-            
-            if (res.success) {
-                // 1. Isi Dropdown Mapel
-                elMapel.innerHTML = '<option value="">-- Pilih Mapel --</option>';
-                if (res.mapels.length > 0) {
-                    res.mapels.forEach(m => {
-                        let opt = document.createElement('option');
-                        opt.value = m; opt.innerText = m;
-                        elMapel.appendChild(opt);
-                    });
-                    elMapel.disabled = false;
+      const cacheKey = LSCache.makeKey(`PDF_OPTS_${sheetName}`);
+      const cachedOpts = LSCache.get(cacheKey);
+
+      if (cachedOpts) {
+          console.log("PDF Opts: Memuat dari Cache Browser");
+          populatePdfDropdowns(cachedOpts);
+      } else {
+          showLoader(true, "Menyiapkan data PDF...");
+          google.script.run
+            .withSuccessHandler(res => {
+                showLoader(false);
+                if (res.success) {
+                    LSCache.set(cacheKey, res); // Simpan
+                    populatePdfDropdowns(res);
                 } else {
-                    elMapel.innerHTML = '<option value="">Tidak ada Mapel</option>';
+                    alert("Gagal memuat data: " + res.message);
                 }
+            })
+            .withFailureHandler(err => handleServerError(err, () => loadDropdownsForPdf(sheetName)))
+            .getArsipDropdownData(currentArsipDbId, sheetName);
+      }
+  }
 
-                // 2. Isi Dropdown Kelas
-                elKelas.innerHTML = '<option value="semua">Semua Kelas</option>';
-                if (res.classes.length > 0) {
-                    res.classes.forEach(c => {
-                        let opt = document.createElement('option');
-                        opt.value = c; opt.innerText = c;
-                        elKelas.appendChild(opt);
-                    });
-                }
-                elKelas.disabled = false;
-                
-                // Cek status tombol download
-                checkPdfReady();
-                
-            } else {
-                alert("Gagal memuat data: " + res.message);
-                elMapel.innerHTML = '<option value="">Error</option>';
-                elKelas.innerHTML = '<option value="">Error</option>';
-            }
-        })
-        .withFailureHandler(err => {
-            showLoader(false);
-            alert("Error Koneksi: " + err.message);
-        })
-        .getArsipDropdownData(currentArsipDbId, sheetName); // Memanggil fungsi baru di server
+  function populatePdfDropdowns(res) {
+      const elMapel = document.getElementById('select-mapel');
+      const elKelas = document.getElementById('select-kelas');
+      
+      // 1. Mapel
+      elMapel.innerHTML = '<option value="">-- Pilih Mapel --</option>';
+      if (res.mapels.length > 0) {
+          res.mapels.forEach(m => {
+              let opt = document.createElement('option');
+              opt.value = m; opt.innerText = m;
+              elMapel.appendChild(opt);
+          });
+          elMapel.disabled = false;
+      } else {
+          elMapel.innerHTML = '<option value="">Tidak ada Mapel</option>';
+      }
+
+      // 2. Kelas
+      elKelas.innerHTML = '<option value="semua">Semua Kelas</option>';
+      if (res.classes.length > 0) {
+          res.classes.forEach(c => {
+              let opt = document.createElement('option');
+              opt.value = c; opt.innerText = c;
+              elKelas.appendChild(opt);
+          });
+      }
+      elKelas.disabled = false;
+      
+      checkPdfReady();
   }
   
-  // Listener perubahan Mapel untuk aktifkan tombol
   document.getElementById('select-mapel').addEventListener('change', checkPdfReady);
   
   function checkPdfReady() {
       const mapel = document.getElementById('select-mapel').value;
-      const btn = document.getElementById('btn-download-pdf');
-      btn.disabled = !mapel; // Aktif jika mapel dipilih
+      document.getElementById('btn-download-pdf').disabled = !mapel;
   }
 
   function downloadPdf() {
@@ -521,6 +592,7 @@
       
       showLoader(true, "Membuat PDF Laporan...");
       
+      // PDF TIDAK DI-CACHE KARENA FILE BINARY BESAR & JARANG DIULANG
       google.script.run
         .withSuccessHandler(res => {
             showLoader(false);
@@ -536,11 +608,10 @@
             }
         })
         .withFailureHandler(err => { showLoader(false); alert("Error: "+err.message); })
-        // Gunakan currentNpsn dari URL
         .generateArsipPdf(currentNpsn, sheetName, mapel, jenis, kelas);
   }
 
-  // --- TABLE RENDERING UTILS ---
+  // --- TABLE RENDERING UTILS (TIDAK BERUBAH) ---
   function clearTable() {
       document.getElementById('table-head').innerHTML = '';
       document.getElementById('table-body').innerHTML = '<tr><td colspan="100%" class="text-center p-4 text-muted">Silakan pilih filter tahun.</td></tr>';
@@ -548,14 +619,9 @@
   }
 
   function renderTable() {
-      // --- TAMBAHAN: Reset mode agar Sticky kembali ke Kolom 2 (Nama Siswa) ---
       const tableElement = document.getElementById('data-table');
-      if (tableElement) {
-          tableElement.classList.remove('mode-range'); 
-      }
-      // -----------------------------------------------------------------------
+      if (tableElement) tableElement.classList.remove('mode-range'); 
 
-      // Logika render untuk mode Single
       const jenis = document.getElementById('select-jenis').value;
       const headers = globalTableData.headers;
       const thead = document.getElementById('table-head');
@@ -563,7 +629,6 @@
       
       thead.innerHTML = ''; tbody.innerHTML = '';
       
-      // Cari index kolom dinamis
       const idxMapel = [];
       let idxJml = -1, idxRata = -1, idxStatus = -1;
       
@@ -574,13 +639,11 @@
          else if(h.endsWith(`_${jenis}`)) idxMapel.push(i);
       });
       
-      // Build Header
       let hHtml = `<tr><th width="30">No</th><th width="200">Nama Siswa</th><th width="100">NISN</th><th width="60">Kelas</th>`;
       idxMapel.forEach(i => hHtml += `<th>${headers[i].replace('_'+jenis,'')}</th>`);
       hHtml += `<th class="bg-primary text-white">Jumlah</th><th class="bg-primary text-white">Rata-Rata</th><th>Status</th></tr>`;
       thead.innerHTML = hHtml;
       
-      // Pagination Slice
       const total = filteredRows.length;
       let start = 0, end = total;
       if(rowsPerPage !== 'all') {
@@ -602,32 +665,21 @@
               let hitungSum = 0;
               let hitungCount = 0;
 
-              // Nilai Mapel & Akumulasi
               idxMapel.forEach(idx => {
                   const val = row[idx];
                   tr += `<td class="text-center">${val||''}</td>`;
-                  
-                  // Logika hitung manual
                   if (val !== "" && val !== null && !isNaN(parseFloat(val))) {
                       hitungSum += parseFloat(val);
                       hitungCount++;
                   }
               });
               
-              // Tentukan Nilai Akhir
-              const displayJml = (idxJml > -1 && row[idxJml] !== "") 
-                  ? row[idxJml] 
-                  : (hitungCount > 0 ? parseFloat(hitungSum.toFixed(2)) : 0);
-
-              const displayRata = (idxRata > -1 && row[idxRata] !== "") 
-                  ? row[idxRata] 
-                  : (hitungCount > 0 ? (hitungSum / hitungCount).toFixed(2) : 0);
+              const displayJml = (idxJml > -1 && row[idxJml] !== "") ? row[idxJml] : (hitungCount > 0 ? parseFloat(hitungSum.toFixed(2)) : 0);
+              const displayRata = (idxRata > -1 && row[idxRata] !== "") ? row[idxRata] : (hitungCount > 0 ? (hitungSum / hitungCount).toFixed(2) : 0);
               
-              // Totals (Tampilkan Hasil)
               tr += `<td class="text-center fw-bold">${displayJml}</td>`;
               tr += `<td class="text-center fw-bold">${displayRata}</td>`;
               
-              // Status
               const stat = idxStatus > -1 ? row[idxStatus] : '';
               let badge = stat==='LULUS'?'bg-success':(stat==='TIDAK LULUS'?'bg-danger':'bg-secondary');
               tr += `<td class="text-center"><span class="badge ${badge}">${stat}</span></td></tr>`;
@@ -639,14 +691,9 @@
   }
   
   function renderTableRange() {
-      // --- TAMBAHAN: Aktifkan mode range (Sticky pindah ke Kolom 1 / Tahun) ---
       const tableElement = document.getElementById('data-table');
-      if (tableElement) {
-          tableElement.classList.add('mode-range');
-      }
-      // -----------------------------------------------------------------------
+      if (tableElement) tableElement.classList.add('mode-range');
 
-      // Render sederhana untuk mode Range
       const headers = globalTableData.headers;
       const rows = globalTableData.rows;
       const thead = document.getElementById('table-head');
@@ -677,7 +724,6 @@
   function filterTableLocal() {
       const q = document.getElementById('search-input').value.toLowerCase();
       filteredRows = globalTableData.rows.filter(r => {
-          // r[1] = Nama, r[2] = NISN (Asumsi struktur array konsisten dari getArsipData)
           const nama = String(r[1]).toLowerCase();
           const nisn = String(r[2]).toLowerCase();
           return nama.includes(q) || nisn.includes(q);
@@ -694,10 +740,8 @@
       const div = document.getElementById('pagination-controls');
       if(total===0 || document.getElementById('select-mode').value !== 'single') { div.style.display='none'; return; }
       div.style.display = 'flex';
-      
       document.getElementById('page-info').innerText = `Menampilkan ${start+1}-${end} dari ${total} data`;
       document.getElementById('current-page-label').innerText = currentPage;
-      
       const maxPage = Math.ceil(total/parseInt(rowsPerPage));
       document.getElementById('btn-prev').parentElement.classList.toggle('disabled', currentPage===1);
       document.getElementById('btn-next').parentElement.classList.toggle('disabled', currentPage>=maxPage);

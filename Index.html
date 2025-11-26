@@ -75,23 +75,56 @@
     table:not(.mode-range) tbody td:nth-child(2) { background-color: #fff; }
     table:not(.mode-range) thead th:nth-child(2) { background-color: #212529 !important; z-index: 12; border-right: 2px solid #495057; }
     
-    /* --- [UPDATE] TAMPILAN MOBILE (RESPONSIF) --- */
+    /* --- [PERBAIKAN UTAMA] TAMPILAN MOBILE (RESPONSIF) --- */
     @media (max-width: 768px) {
-        /* Override khusus untuk HP: Nama Siswa Wrap & Lebih Kecil */
+        /* Override lebar kolom nama agar pas di layar HP */
         table:not(.mode-range) tbody td:nth-child(2),
         table:not(.mode-range) thead th:nth-child(2) {
-            min-width: 160px !important; /* Perkecil lebar agar kolom mapel terlihat */
+            min-width: 160px !important; 
             max-width: 160px !important;
             width: 160px !important;
             
-            /* Izinkan turun baris (Wrap) agar nama panjang tetap terbaca */
-            white-space: normal !important; 
+            white-space: normal !important; /* Izinkan wrap text */
             
-            /* Tetap Sticky agar nama selalu terlihat saat geser ke nilai */
             position: sticky;
             left: 0;
-            z-index: 11;
             border-right: 2px solid #dee2e6;
+        }
+
+        /* ISI TABEL (NAMA SISWA): Z-Index 11 (Di atas kolom lain saat scroll samping) */
+        table:not(.mode-range) tbody td:nth-child(2) {
+            z-index: 11 !important;
+        }
+
+        /* HEADER TABEL (NAMA SISWA): Z-Index 13 (Wajib LEBIH TINGGI dari isi tabel agar tidak tertutup saat scroll ke bawah) */
+        table:not(.mode-range) thead th:nth-child(2) {
+            z-index: 13 !important; 
+        }
+
+        /* Header & Tombol Export di HP */
+        .header-tools-wrapper {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        
+        /* Container Tombol Export */
+        #export-buttons-container {
+            width: 100%;
+            /* Saat JS set display:block, override jadi flex untuk layout */
+            display: flex !important; 
+            gap: 10px;
+        }
+        
+        /* Jika JS menyembunyikan (display: none), paksa sembunyi */
+        #export-buttons-container[style*="display: none"] {
+            display: none !important;
+        }
+
+        /* Tombol didalam container */
+        #export-buttons-container .btn {
+            flex: 1; /* Membagi rata lebar (50:50) */
+            margin-right: 0 !important; /* Hapus margin bawaan bootstrap me-1 */
         }
     }
 
@@ -160,6 +193,97 @@
     .universal-footer a:hover { color: #0d6efd; text-decoration: underline; }
     .universal-footer p { margin: 0; }
 
+    /* --- CSS KHUSUS WRAPPER HEADER TABEL --- */
+    .header-tools-wrapper {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    /* --- GAYA BARU PAGINATION (PROFESIONAL & RESPONSIF) --- */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between; /* Jarak antara teks dan tombol */
+        align-items: center;
+        padding: 15px 5px; /* Padding yang lega */
+        border-top: 1px solid #dee2e6; /* Garis pemisah atas halus */
+        margin-top: 0;
+        background-color: #fff;
+        flex-wrap: wrap; /* Izinkan elemen turun jika layar sempit */
+        gap: 10px; /* Jarak antar elemen */
+    }
+
+    #page-info {
+        font-size: 14px;
+        font-weight: 600;
+        color: #495057; /* Warna abu gelap elegan */
+        margin: 0;
+    }
+
+    .pagination .page-link {
+        color: #0d6efd;
+        border-radius: 6px; /* Sudut tombol sedikit membulat */
+        margin: 0 2px; /* Jarak antar tombol */
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 5px; /* Jarak ikon dan teks */
+        border: 1px solid #dee2e6;
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+        color: white;
+        font-weight: 700;
+        box-shadow: 0 2px 4px rgba(13, 110, 253, 0.3); /* Efek bayangan */
+    }
+    
+    .pagination .page-link:focus {
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+    }
+    
+    .pagination .page-item.disabled .page-link {
+        color: #adb5bd;
+        background-color: #f8f9fa;
+    }
+
+    /* --- RESPONSIVE MOBILE (HP) --- */
+    @media (max-width: 576px) {
+        .pagination-container {
+            flex-direction: column-reverse; /* Tombol di atas, Info di bawah (atau sebaliknya sesuai selera, column biasa: Info atas, Tombol bawah) */
+            justify-content: center;
+            text-align: center;
+            padding: 15px 0;
+            gap: 12px;
+        }
+
+        #page-info {
+            font-size: 13px;
+            color: #6c757d;
+            order: 2; /* Pastikan info ada di bawah tombol jika pakai column, atau sesuaikan */
+        }
+        
+        /* Agar tombol berada di tengah saat di HP */
+        .pagination-container nav {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+        
+        /* Sembunyikan teks "Sebelumnya/Berikutnya" di layar sangat kecil, sisakan ikon */
+        .btn-text-responsive {
+            display: none;
+        }
+    }
+    
+    /* Tampilkan teks di layar lebih besar dari HP kecil */
+    @media (min-width: 380px) {
+        .btn-text-responsive {
+            display: inline;
+        }
+    }
   </style>
 </head>
 <body>
@@ -189,7 +313,7 @@
   <div class="card mb-3 border-0 shadow-sm">
     <div class="card-body d-flex align-items-end gap-3 flex-wrap">
       
-      <div style="min-width: 180px;">
+      <div class="flex-grow-1" style="min-width: 180px;">
         <label class="form-label fw-bold small text-primary">Mode Tampilan:</label>
         <select id="select-mode" class="form-select form-select-sm" onchange="handleModeChange()">
           <option value="single">Per Tahun (Detail Siswa)</option>
@@ -259,7 +383,7 @@
   </div>
 
   <div id="table-wrapper" class="table-container">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="header-tools-wrapper">
         <h5 id="table-title" class="mb-0 text-secondary">Data Arsip</h5>
         
         <div id="export-buttons-container" style="display: none;">
@@ -279,12 +403,27 @@
       </table>
     </div>
     <div id="pagination-controls" class="pagination-container" style="display:none;">
-        <div class="text-muted small" id="page-info">Menampilkan 0-0 dari 0 data</div>
-        <nav>
+        <div id="page-info">
+            <i class="fas fa-list-ol me-1 text-secondary"></i> Menampilkan <span class="text-dark">0-0</span> dari <span class="text-dark">0</span> data
+        </div>
+        
+        <nav aria-label="Navigasi Halaman">
             <ul class="pagination pagination-sm mb-0">
-                <li class="page-item"><button class="page-link" onclick="prevPage()" id="btn-prev">Sebelumnya</button></li>
-                <li class="page-item active"><span class="page-link" id="current-page-label">1</span></li>
-                <li class="page-item"><button class="page-link" onclick="nextPage()" id="btn-next">Berikutnya</button></li>
+                <li class="page-item">
+                    <button class="page-link shadow-sm" onclick="prevPage()" id="btn-prev" title="Halaman Sebelumnya">
+                        <i class="fas fa-chevron-left"></i> <span class="btn-text-responsive">Sebelumnya</span>
+                    </button>
+                </li>
+                
+                <li class="page-item active">
+                    <span class="page-link shadow-sm" id="current-page-label">1</span>
+                </li>
+                
+                <li class="page-item">
+                    <button class="page-link shadow-sm" onclick="nextPage()" id="btn-next" title="Halaman Berikutnya">
+                        <span class="btn-text-responsive">Berikutnya</span> <i class="fas fa-chevron-right"></i>
+                    </button>
+                </li>
             </ul>
         </nav>
     </div>
@@ -421,20 +560,19 @@
 
   // --- DATA LOADING ---
   function loadYears() {
-    const cacheKey = LSCache.makeKey("YEARS_LIST");
-    const cachedYears = LSCache.get(cacheKey);
-
-    if (cachedYears) {
-       populateYearDropdowns(cachedYears);
-    } else {
-       google.script.run.withSuccessHandler(res => {
-          if (res.success) {
-             LSCache.set(cacheKey, res.years); 
-             populateYearDropdowns(res.years);
-          }
-       }).withFailureHandler(err => handleServerError(err, loadYears))
-         .getArsipYears(currentArsipDbId);
-    }
+    // --- PERBAIKAN: HAPUS LOCAL STORAGE CACHE ---
+    // Jangan ambil dari LSCache, langsung minta ke server
+    // agar jika ada arsip baru, langsung muncul di dropdown.
+    
+    console.log("Memuat daftar tahun terbaru dari server...");
+    
+    google.script.run.withSuccessHandler(res => {
+       if (res.success) {
+          // Kita tidak perlu menyimpan ke LSCache lagi untuk Years
+          populateYearDropdowns(res.years);
+       }
+    }).withFailureHandler(err => handleServerError(err, loadYears))
+      .getArsipYears(currentArsipDbId);
   }
 
   function populateYearDropdowns(years) {

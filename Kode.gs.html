@@ -58,15 +58,10 @@ function loginArsip(npsn) {
 
 function getArsipYears(arsipDbId) {
   try {
-    // CACHE YEARS: Daftar tahun jarang berubah
-    const cache = CacheService.getScriptCache();
-    const cacheKey = "YEARS_" + arsipDbId;
-    const cachedData = cache.get(cacheKey);
+    // --- PERBAIKAN: HAPUS CACHE ---
+    // Kita menghapus logika cache di sini agar setiap kali dibuka, 
+    // aplikasi selalu mengecek sheet terbaru yang ada di Spreadsheet.
     
-    if (cachedData) {
-       return { success: true, years: JSON.parse(cachedData) };
-    }
-
     const ss = SpreadsheetApp.openById(arsipDbId);
     const sheets = ss.getSheets();
     const years = [];
@@ -77,10 +72,9 @@ function getArsipYears(arsipDbId) {
         years.push(name);
       }
     });
-    years.sort().reverse();
     
-    // Simpan ke cache 6 jam
-    cache.put(cacheKey, JSON.stringify(years), 21600);
+    // Urutkan tahun terbaru di atas
+    years.sort().reverse();
     
     return { success: true, years: years };
   } catch (e) {
@@ -587,7 +581,7 @@ function formatNamaGelar(namaLengkap) {
 
 /**
  * [DIPERBARUI] Fungsi Utama Export Arsip (Excel & PDF)
- * Melakukan filtering kolom agar sesuai dengan tampilan website.
+ * PERBAIKAN: Mengambil legenda mapel dan mengirimkannya ke fungsi PDF.
  */
 function processExportArsip(params) {
   try {
@@ -595,27 +589,29 @@ function processExportArsip(params) {
     let rows = [];
     let fileName = "";
     
-    // 1. Ambil Data
+    // 1. Ambil Data Arsip
     if (params.mode === 'single') {
       const data = getArsipData(params.arsipDbId, params.sheetName);
       if (!data.success) throw new Error(data.message);
       
       const rawHeaders = data.headers;
       const rawRows = data.rows;
-      const jenis = params.jenisNilai; // Contoh: "Ujian"
+      const jenis = params.jenisNilai;
 
-      // --- FILTERING LOGIC (AGAR SAMA DENGAN WEBSITE) ---
       const indicesToKeep = [];
       const cleanHeaders = [];
 
-      // Identifikasi kolom yang akan diambil
       rawHeaders.forEach((h, index) => {
-        // 1. Kolom Identitas (Selalu Ikut)
-        if (['No', 'Nama Siswa', 'NISN', 'Kelas', 'Status'].includes(h)) {
+        if (['No', 'Nama Siswa', 'NISN', 'Kelas'].includes(h)) {
           indicesToKeep.push(index);
           cleanHeaders.push(h);
-        } 
-        // 2. Kolom Jumlah & Rata-rata (Sesuai Jenis)
+        }
+        else if (h === 'Status') {
+          if (jenis === 'Ijazah') {
+             indicesToKeep.push(index);
+             cleanHeaders.push(h);
+          }
+        }
         else if (h === `Jumlah_${jenis}`) {
           indicesToKeep.push(index);
           cleanHeaders.push("Jumlah");
@@ -624,25 +620,21 @@ function processExportArsip(params) {
           indicesToKeep.push(index);
           cleanHeaders.push("Rata-Rata");
         } 
-        // 3. Kolom Mapel (Sesuai Jenis) - Contoh: QH_Ujian -> QH
         else if (h.endsWith(`_${jenis}`)) {
           indicesToKeep.push(index);
-          cleanHeaders.push(h.replace(`_${jenis}`, '')); // Hapus suffix
+          cleanHeaders.push(h.replace(`_${jenis}`, ''));
         }
       });
 
-      // Buat array baris baru berdasarkan indeks yang dipilih
       const filteredRows = rawRows.map(row => {
         return indicesToKeep.map(i => row[i]);
       });
 
-      // Update variabel utama
       headers = cleanHeaders;
       rows = filteredRows;
       fileName = `Arsip_${params.sheetName}_${params.jenisNilai}_${params.namaSekolah}`;
     } 
     else if (params.mode === 'range') {
-      // Mode Range sudah difilter oleh fungsi getArsipDataRange, jadi aman
       const data = getArsipDataRange(params.arsipDbId, params.startSheet, params.endSheet, params.jenisNilai);
       if (!data.success) throw new Error(data.message);
       headers = data.headers;
@@ -652,11 +644,13 @@ function processExportArsip(params) {
     
     if (rows.length === 0) throw new Error("Tidak ada data untuk diekspor.");
 
-    // 2. Generate File sesuai Tipe
+    // 2. Generate File
     if (params.type === 'excel') {
       return generateExcelArsip(headers, rows, fileName, params.title, params.namaSekolah);
     } else {
-      return generatePdfArsip(headers, rows, fileName, params.title, params.namaSekolah, params.mode);
+      // [PERBAIKAN] Ambil legenda mapel untuk PDF
+      const legend = getMapelLegend(params.arsipDbId);
+      return generatePdfArsip(headers, rows, fileName, params.title, params.namaSekolah, params.mode, legend);
     }
 
   } catch (e) {
@@ -715,60 +709,80 @@ function generateExcelArsip(headers, rows, fileName, title, namaSekolah) {
 }
 
 /**
- * [HELPER] Generate PDF Blob (HTML to PDF)
- * Menggunakan header dan data yang SUDAH DIBERSIHKAN oleh fungsi di atas.
+ * [DIPERBARUI] Generate PDF Blob
+ * PERBAIKAN: Menambahkan keterangan kode mapel di bawah tabel.
  */
-function generatePdfArsip(headers, rows, fileName, title, namaSekolah, mode) {
+function generatePdfArsip(headers, rows, fileName, title, namaSekolah, mode, legend) {
   
-  // Buat Header Tabel HTML
   let tableHeaderHtml = '<tr style="background-color: #f2f2f2;">';
   headers.forEach(h => {
     let align = 'center';
-    // Align kiri untuk Nama Siswa (jika ada)
     if (h === 'Nama Siswa') align = 'left';
-    
-    tableHeaderHtml += `<th style="border: 1px solid #000; padding: 6px; text-align: ${align}; font-size: 10px; font-weight: bold;">${h}</th>`;
+    tableHeaderHtml += `<th style="border: 1px solid #000; padding: 6px 4px; text-align: ${align}; font-size: 11pt; font-weight: bold;">${h}</th>`;
   });
   tableHeaderHtml += '</tr>';
 
-  // Buat Body Tabel HTML
   let tableBodyHtml = '';
   rows.forEach((row, index) => {
     tableBodyHtml += `<tr>`;
     row.forEach((cell, i) => {
-       let style = 'border: 1px solid #000; padding: 4px; font-size: 9px;';
+       let style = 'border: 1px solid #000; padding: 5px 4px; font-size: 10.5pt;';
        let val = (cell === null || cell === undefined) ? '' : cell;
        
-       // Cek nama kolom berdasarkan index header
        const headerName = headers[i];
-       
-       // Styling khusus
        if (headerName === 'Nama Siswa') {
-          style += ' text-align: left; white-space: nowrap;';
-       } else if (headerName === 'Tahun Pelajaran' || headerName === 'No' || headerName === 'Kelas' || headerName === 'NISN') {
+          style += ' text-align: left; white-space: nowrap; font-weight: 500;';
+       } else if (headerName === 'Tahun Pelajaran' || headerName === 'No' || headerName === 'Kelas' || headerName === 'NISN' || headerName === 'Status') {
           style += ' text-align: center;';
        } else if (headerName === 'Jumlah' || headerName === 'Rata-Rata') {
-          style += ' text-align: center; font-weight: bold; background-color: #f9f9f9;';
+          style += ' text-align: center; font-weight: bold; background-color: #fdfdfd;';
        } else {
-          // Nilai Mapel
           style += ' text-align: center;';
        }
-       
        tableBodyHtml += `<td style="${style}">${val}</td>`;
     });
     tableBodyHtml += `</tr>`;
   });
+
+  // [PERBAIKAN] Susun HTML Legenda Mapel
+  let legendHtml = '';
+  if (legend && Object.keys(legend).length > 0) {
+      // Filter hanya kode mapel yang ada di tabel saat ini
+      const mapelCodes = headers.filter(h => legend[h]);
+      
+      if (mapelCodes.length > 0) {
+        legendHtml = `
+          <div style="margin-top: 15px; font-size: 9pt; color: #333; page-break-inside: avoid;">
+            <div style="font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Keterangan Kode Mapel:</div>
+            <table style="border: none; width: auto;">
+        `;
+        
+        // Susun baris per baris: KODE - NAMA
+        mapelCodes.forEach(code => {
+           legendHtml += `
+             <tr>
+               <td style="border: none; padding: 1px 10px 1px 0; font-weight: bold; white-space: nowrap;">${code}</td>
+               <td style="border: none; padding: 1px 5px 1px 0;">-</td>
+               <td style="border: none; padding: 1px 0;">${legend[code]}</td>
+             </tr>
+           `;
+        });
+        
+        legendHtml += `</table></div>`;
+      }
+  }
 
   const htmlContent = `
     <html>
     <head>
       <style>
         @page { size: A4 landscape; margin: 1cm; } 
-        body { font-family: Arial, sans-serif; }
-        h2 { text-align: center; margin: 0 0 5px 0; text-transform: uppercase; font-size: 16pt; }
-        h3 { text-align: center; margin: 0 0 15px 0; text-transform: uppercase; font-size: 12pt; font-weight: bold; text-decoration: underline; }
-        p.meta { text-align: center; font-size: 9pt; color: #444; margin-bottom: 10px; font-style: italic; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #000; }
+        h2 { text-align: center; margin: 0 0 5px 0; text-transform: uppercase; font-size: 18pt; letter-spacing: 1px; }
+        h3 { text-align: center; margin: 0 0 20px 0; text-transform: uppercase; font-size: 14pt; font-weight: bold; text-decoration: underline; }
+        p.meta { text-align: center; font-size: 10pt; color: #444; margin-bottom: 15px; font-style: italic; }
         table { width: 100%; border-collapse: collapse; margin-top: 0; }
+        th { background-color: #e0e0e0; }
       </style>
     </head>
     <body>
@@ -780,6 +794,9 @@ function generatePdfArsip(headers, rows, fileName, title, namaSekolah, mode) {
         <thead>${tableHeaderHtml}</thead>
         <tbody>${tableBodyHtml}</tbody>
       </table>
+      
+      ${legendHtml}
+      
     </body>
     </html>
   `;
@@ -806,4 +823,50 @@ function generatePdfArsip(headers, rows, fileName, title, namaSekolah, mode) {
 function _triggerUrlFetchPermission() {
   // Memaksa script meminta izin akses jaringan eksternal
   UrlFetchApp.fetch("https://www.google.com");
+}
+
+/**
+ * [BARU] Helper untuk mengambil Legenda Mapel (Kode -> Nama Lengkap)
+ * Mengambil data dari Database Aplikasi 1 (via Master Sheet).
+ */
+function getMapelLegend(arsipDbId) {
+  try {
+    const masterSS = SpreadsheetApp.openById(ID_MASTER_SHEET_APP_1);
+    const sheetSekolah = masterSS.getSheetByName('Sheet_Sekolah');
+    
+    // Cari baris sekolah berdasarkan Arsip DB ID (Kolom V / Index 21)
+    const data = sheetSekolah.getDataRange().getValues();
+    let app1DbId = null;
+    
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][21]) === String(arsipDbId)) { 
+        app1DbId = data[i][5]; // Ambil App 1 DB ID (Kolom F / Index 5)
+        break;
+      }
+    }
+    
+    if (!app1DbId) return {};
+    
+    // Buka App 1 dan ambil sheet Mapel
+    const app1SS = SpreadsheetApp.openById(app1DbId);
+    const mapelSheet = app1SS.getSheetByName('Mapel');
+    if (!mapelSheet) return {};
+    
+    const mapelData = mapelSheet.getDataRange().getValues();
+    const legend = {};
+    
+    // Asumsi: Kolom A = Kode, Kolom B = Nama
+    for (let i = 1; i < mapelData.length; i++) {
+      const code = mapelData[i][0];
+      const name = mapelData[i][1];
+      if (code && name) {
+        legend[code] = name;
+      }
+    }
+    
+    return legend;
+  } catch (e) {
+    Logger.log("Gagal mengambil legenda mapel: " + e.message);
+    return {};
+  }
 }

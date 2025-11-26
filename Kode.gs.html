@@ -295,22 +295,20 @@ function getArsipDropdownData(arsipDbId, sheetName) {
   }
 }
 
-// --- GENERATE PDF (CACHE TIDAK DIPERLUKAN KARENA PDF SELALU UNIK/JARANG) ---
+// --- GENERATE PDF (REVISI: HAPUS GARIS KOP OTOMATIS) ---
 function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
-  // LockService penting untuk PDF agar tidak tabrakan
   const lock = LockService.getScriptLock();
   
   try {
     lock.waitLock(30000); 
 
-    // --- AMBIL CACHE ID SEKOLAH JIKA ADA (OPTIMASI KECIL) ---
-    // Kita masih perlu buka SS untuk ambil data nilai, tapi kita bisa skip pencarian NPSN
-    
+    // 1. AMBIL DATA DARI MASTER SHEET (Cari Sekolah berdasarkan NPSN)
     const masterSS = SpreadsheetApp.openById(ID_MASTER_SHEET_APP_1);
     const sheetSekolah = masterSS.getSheetByName('Sheet_Sekolah');
     const dataMaster = sheetSekolah.getDataRange().getValues();
     let rowData = null;
     
+    // Cari baris berdasarkan NPSN (Kolom H / Index 7)
     for(let i=1; i<dataMaster.length; i++) {
       if (String(dataMaster[i][7]).trim() === String(npsn).trim()) {
         rowData = dataMaster[i];
@@ -320,29 +318,53 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
     
     if (!rowData) throw new Error("Data sekolah tidak ditemukan (NPSN tidak cocok).");
 
-    const namaSekolah = rowData[1]; 
-    const app1DbId = rowData[5];    
-    const kopFileId = rowData[15];  
-    const tempatTtd = rowData[19] || '';
-    const arsipDbId = rowData[21];  
+    // 2. DEFINISI VARIABEL DARI MASTER SHEET
+    const namaSekolah = rowData[1] || 'SEKOLAH';         // Kolom B
+    const app1DbId = rowData[5];                         // Kolom F (ID DB App 1)
+    const kopFileId = rowData[15];                       // Kolom P (ID File Kop Surat)
+    const tempatTtdMaster = rowData[19];                 // Kolom T (Tempat TTD)
+    const arsipDbId = rowData[21];                       // Kolom V (ID DB Arsip)
+    
+    // Logika Tanggal (Manual vs Otomatis)
+    const tglManual = rowData[16]; // Kolom Q
+    const modeTgl = rowData[20];   // Kolom U
+    
+    let tanggalStr = '';
+    let dateObj = new Date(); // Default hari ini
 
-    // Ambil Info Kepsek & Nama Mapel
+    if (modeTgl === 'manual' && tglManual instanceof Date) {
+        dateObj = tglManual;
+    }
+    // Format Tanggal Indonesia
+    tanggalStr = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    // 3. AMBIL DATA DARI DB APLIKASI 1 (Kepsek & Nama Mapel Lengkap)
     let kepalaSekolah = '.........................';
     let nipKepsek = '-';
     let jenjang = '';
-    let mapelFullName = mapel;
+    let mapelFullName = mapel; 
     
+    // Prioritas Tempat TTD: Ambil dari Master Sheet dulu, jika kosong baru "-"
+    let tempatTtdFinal = tempatTtdMaster ? tempatTtdMaster : "................";
+
     if (app1DbId) {
+       // Blok A: Ambil Data Sekolah (Kepsek)
        try {
          const ss1 = SpreadsheetApp.openById(app1DbId);
          const dsSheet = ss1.getSheetByName('Data_Sekolah');
          if (dsSheet) {
            const val = dsSheet.getRange('A2:P2').getValues()[0];
-           jenjang = val[0] || '';
-           if(val[14]) kepalaSekolah = val[14];
-           if(val[15]) nipKepsek = val[15];
+           if(val[0]) jenjang = val[0];
+           if(val[14]) kepalaSekolah = val[14]; 
+           if(val[15]) nipKepsek = val[15];     
          }
+       } catch(e) { 
+         Logger.log("Gagal ambil data Kepsek dari App 1: " + e.message); 
+       }
 
+       // Blok B: Ambil Nama Mapel Lengkap
+       try {
+         const ss1 = SpreadsheetApp.openById(app1DbId); 
          const mapelSheetRef = ss1.getSheetByName('Mapel');
          if (mapelSheetRef) {
              const dataMapelRef = mapelSheetRef.getDataRange().getValues();
@@ -353,13 +375,16 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
                  }
              }
          }
-
-       } catch(e) { Logger.log("Error ambil data dari App 1: " + e.message); }
+       } catch(e) {
+         Logger.log("Gagal ambil nama mapel dari App 1: " + e.message);
+       }
     }
 
-    // Ambil Data Nilai
+    // 4. AMBIL DATA NILAI DARI ARSIP (App 3)
     const ssArsip = SpreadsheetApp.openById(arsipDbId);
     const sheet = ssArsip.getSheetByName(sheetName);
+    if (!sheet) throw new Error("Sheet Arsip tidak ditemukan.");
+
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     
@@ -405,77 +430,117 @@ function generateArsipPdf(npsn, sheetName, mapel, jenisNilai, filterKelas) {
        return a.nama.localeCompare(b.nama);
     });
 
-    // Generate HTML PDF (Sama seperti sebelumnya)
+    // 5. SUSUN HTML UNTUK PDF
+    
+    // A. Header / Kop Surat
     let kopBase64 = null;
-    let headerHtml = '';
-
     if (kopFileId) {
         kopBase64 = _getImageAsBase64DataUrl(kopFileId);
     }
 
+    let headerHtml = '';
     if (kopBase64) {
+      // --- PERUBAHAN DI SINI: MENGHAPUS BORDER-BOTTOM ---
+      // Saya menghapus 'border-bottom: 3px solid black;' karena gambar sudah punya garis.
       headerHtml = `
-        <div style="width:100%; text-align:center; margin-bottom:10px; padding-bottom:5px;">
-           <img src="${kopBase64}" style="width:680px; display:block; margin:0 auto;" />
+        <div style="width:100%; text-align:center; margin-bottom:5px; padding-bottom:0px;">
+           <img src="${kopBase64}" style="width:100%; max-height:160px; object-fit:contain;" />
         </div>`;
     } else {
+      // Fallback (Teks Saja) -> Tetap pakai garis
       headerHtml = `
         <div style="text-align: center; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 20px;">
            <h2 style="margin:0;">${namaSekolah.toUpperCase()}</h2>
         </div>`;
     }
       
+    // B. Baris Data Siswa
     let rowsHtml = '';
     if (siswaList.length === 0) {
-      rowsHtml = '<tr><td colspan="6" style="text-align:center; padding:20px;">Tidak ada data.</td></tr>';
+      rowsHtml = '<tr><td colspan="6" style="text-align:center; padding:20px;">Tidak ada data untuk filter ini.</td></tr>';
     } else {
       siswaList.forEach((s, i) => {
         rowsHtml += `<tr>
           <td style="text-align:center;">${i+1}</td>
           <td style="text-align:center;">${s.nisn}</td>
-          <td>${s.nama}</td>
+          <td style="text-align:left; padding-left:5px;">${s.nama}</td>
           <td style="text-align:center;">${s.kelas}</td>
           <td style="text-align:center;">${s.nilai}</td>
-          <td style="font-style:italic;">${s.huruf}</td>
+          <td style="text-align:left; padding-left:5px; font-style:italic;">${s.huruf}</td>
         </tr>`;
       });
     }
     
-    const tglStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    // C. Info Footer
     const jabatan = (jenjang.includes('M') || jenjang.includes('MTS') || jenjang.includes('MA')) ? "Kepala Madrasah" : "Kepala Sekolah";
     const tahunAjar = sheetName.replace('Arsip ', '');
     const kepsekFormatted = formatNamaGelar(kepalaSekolah);
-    
+    const labelNilaiTitle = (jenisNilai === 'Ujian') ? 'UJIAN' : (jenisNilai === 'Rapor' ? 'RAPOR' : 'IJAZAH');
+
+    // --- [MODIFIKASI FINAL] STYLE KUAT UNTUK MEMAKSA WARNA ---
+    const styleHeader = 'style="background-color: #666666 !important; color: #ffffff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-align: center; font-weight: bold; border: 1px solid black; padding: 6px;"';
+
     const html = `
       <html><head><style>
         @page { size: A4; margin: 1cm; }
         body { font-family: Arial, sans-serif; font-size: 10pt; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid black; padding: 4px; }
-        th { background-color: #e0e0e0; text-align: center; font-weight: bold; }
-        .info-table { border: none; margin-bottom: 15px; width: 100%; }
-        .info-table td { border: none; padding: 2px; }
+        
+        /* Pastikan header tabel berwarna abu-abu gelap saat dicetak */
+        th { 
+            background-color: #666666 !important; 
+            color: #ffffff !important; 
+            text-align: center; 
+            font-weight: bold;
+            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact;
+        }
+
+        .info-table { border: none; margin-bottom: 15px; width: 100%; font-size: 11pt; }
+        .info-table td { border: none; padding: 3px; vertical-align: top;}
       </style></head><body>
         ${headerHtml}
-        <div style="text-align:center; margin-bottom:15px;">
-           <h3 style="text-decoration:underline; margin:5px;">LAPORAN NILAI ${jenisNilai.toUpperCase()} (ARSIP)</h3>
+        <div style="text-align:center; margin-bottom:20px;">
+           <h3 style="text-decoration:underline; margin:5px;">LAPORAN NILAI ${labelNilaiTitle} (ARSIP)</h3>
            <h4 style="margin:5px; font-weight:bold;">${namaSekolah.toUpperCase()}</h4>
            <p style="margin:0;">Tahun Ajaran: ${tahunAjar}</p>
         </div>
+        
         <table class="info-table">
-           <tr><td width="120">Mata Pelajaran</td><td>: <strong>${mapelFullName.toUpperCase()}</strong></td></tr>
-           <tr><td>Kelas</td><td>: <strong>${filterKelas === 'semua' ? 'Semua Kelas' : filterKelas}</strong></td></tr>
+           <tr>
+             <td width="130">Mata Pelajaran</td>
+             <td width="10">:</td>
+             <td><strong>${mapelFullName.toUpperCase()}</strong></td>
+           </tr>
+           <tr>
+             <td>Kelas</td>
+             <td>:</td>
+             <td><strong>${filterKelas === 'semua' ? 'Semua Kelas' : filterKelas}</strong></td>
+           </tr>
         </table>
+
         <table>
            <thead>
-             <tr><th width="30">No</th><th width="80">NISN</th><th>Nama Siswa</th><th width="60">Kelas</th><th width="50">Nilai</th><th>Terbilang</th></tr>
+             <tr>
+               <th width="30" ${styleHeader}>No</th>
+               <th width="80" ${styleHeader}>NISN</th>
+               <th ${styleHeader}>Nama Siswa</th>
+               <th width="60" ${styleHeader}>Kelas</th>
+               <th width="50" ${styleHeader}>Nilai</th>
+               <th ${styleHeader}>Terbilang</th>
+             </tr>
            </thead>
            <tbody>${rowsHtml}</tbody>
         </table>
-        <div style="margin-top:30px; float:right; width:250px; text-align:center;">
-           ${tempatTtd}, ${tglStr}<br>
-           Mengetahui,<br>${jabatan}<br><br><br><br>
-           <strong><u>${kepsekFormatted}</u></strong><br>NIP. ${nipKepsek}
+
+        <div style="margin-top:40px; float:right; width:250px; text-align:center;">
+           ${tempatTtdFinal}, ${tanggalStr}<br>
+           Mengetahui,<br>
+           ${jabatan}
+           <br><br><br><br>
+           <strong><u>${kepsekFormatted}</u></strong><br>
+           NIP. ${nipKepsek}
         </div>
       </body></html>
     `;

@@ -332,11 +332,11 @@
       <div id="filter-range-container" class="flex-grow-1 d-none d-flex gap-2" style="min-width: 300px;">
           <div class="flex-grow-1">
             <label class="form-label fw-bold small">Tahun Awal:</label>
-            <select id="select-year-start" class="form-select form-select-sm"><option value="">-- Awal --</option></select>
+            <select id="select-year-start" class="form-select form-select-sm" onchange="handleRangeChange()"><option value="">-- Awal --</option></select>
           </div>
           <div class="flex-grow-1">
             <label class="form-label fw-bold small">Tahun Akhir:</label>
-            <select id="select-year-end" class="form-select form-select-sm"><option value="">-- Akhir --</option></select>
+            <select id="select-year-end" class="form-select form-select-sm" onchange="handleRangeChange()"><option value="">-- Akhir --</option></select>
           </div>
           <button class="btn btn-success btn-sm align-self-end" onclick="loadRangeData()" title="Tampilkan"><i class="fas fa-search"></i></button>
       </div>
@@ -590,14 +590,11 @@
       });
   }
 
-  // --- EVENT HANDLERS ---
   function handleModeChange() {
       const mode = document.getElementById('select-mode').value;
       
-      // Sembunyikan tombol export saat ganti mode
       document.getElementById('export-buttons-container').style.display = 'none';
       
-      // Elements DOM
       const elSingle = document.getElementById('filter-year-container');
       const elRange = document.getElementById('filter-range-container');
       const elSearch = document.getElementById('filter-search-container');
@@ -607,15 +604,19 @@
       const divTable = document.getElementById('table-wrapper');
       const divPdf = document.getElementById('pdf-area');
       
-      // Helper untuk hide/show
       const hide = (el) => el.classList.add('d-none');
       const show = (el) => el.classList.remove('d-none');
 
-      // Reset
+      // Reset Semua
       [elSingle, elRange, elSearch, elRows, elMapel, elKelas, divTable, divPdf].forEach(hide);
       
       document.getElementById('select-year').value = "";
-      document.getElementById('select-mapel').innerHTML = '<option value="">-- Pilih Mapel Dulu --</option>';
+      
+      // --- PERBAIKAN DI SINI: Set Teks Default Mapel ---
+      const mapelSelect = document.getElementById('select-mapel');
+      mapelSelect.innerHTML = '<option value="">-- Pilih Tahun Arsip Dulu --</option>';
+      mapelSelect.disabled = true; // Kunci dropdown
+      
       document.getElementById('select-kelas').innerHTML = '<option value="semua">Semua Kelas</option>';
 
       if (mode === 'single') {
@@ -635,10 +636,40 @@
   function handleYearChange() {
       const mode = document.getElementById('select-mode').value;
       const sheetName = document.getElementById('select-year').value;
-      if (!sheetName) return;
+      
+      // --- PERBAIKAN DI SINI: Logika Reset jika Tahun Kosong ---
+      if (!sheetName) {
+          if (mode === 'single') {
+              clearTable(); // Reset tabel ke "Silakan pilih filter"
+          } else if (mode === 'pdf') {
+              // Reset Dropdown Mapel ke teks "Pilih Tahun Arsip Dulu"
+              const elMapel = document.getElementById('select-mapel');
+              const elKelas = document.getElementById('select-kelas');
+              const btnPdf = document.getElementById('btn-download-pdf');
+              
+              elMapel.innerHTML = '<option value="">-- Pilih Tahun Arsip Dulu --</option>';
+              elMapel.disabled = true;
+              elKelas.innerHTML = '<option value="semua">Semua Kelas</option>';
+              elKelas.disabled = true;
+              btnPdf.disabled = true;
+          }
+          return;
+      }
       
       if (mode === 'single') loadTableData(sheetName);
       else if (mode === 'pdf') loadDropdownsForPdf(sheetName);
+  }
+
+  function handleRangeChange() {
+      const start = document.getElementById('select-year-start').value;
+      const end = document.getElementById('select-year-end').value;
+      
+      // Jika salah satu kosong, bersihkan tabel
+      if (!start || !end) {
+          clearTable();
+      } 
+      // (Opsional) Jika ingin auto-load saat keduanya terisi, uncomment baris bawah:
+      else { loadRangeData(); }
   }
   
   function handleJenisChange() {

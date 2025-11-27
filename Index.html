@@ -284,6 +284,99 @@
             display: inline;
         }
     }
+
+    /* --- STYLE MODAL KONFIRMASI KEREN --- */
+    .custom-modal-overlay {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px); /* Efek blur modern */
+        z-index: 10000;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .custom-modal-overlay.show {
+        display: flex;
+        opacity: 1;
+    }
+
+    .custom-modal-box {
+        background: white;
+        width: 90%;
+        max-width: 400px;
+        border-radius: 16px;
+        box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+        transform: scale(0.8);
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        overflow: hidden;
+        text-align: center;
+    }
+
+    .custom-modal-overlay.show .custom-modal-box {
+        transform: scale(1);
+    }
+
+    .modal-icon-header {
+        background: #fff3cd; /* Warna warning muda */
+        color: #ffc107;      /* Warna warning tua */
+        padding: 20px;
+        font-size: 50px;
+    }
+
+    .modal-content-body {
+        padding: 20px 25px;
+    }
+
+    .modal-content-body h4 {
+        margin: 0 0 10px 0;
+        font-weight: 700;
+        color: #333;
+    }
+
+    .modal-content-body p {
+        color: #666;
+        font-size: 14px;
+        line-height: 1.5;
+        margin: 0;
+    }
+
+    .modal-actions {
+        padding: 0 20px 20px 20px;
+        display: flex;
+        gap: 10px;
+    }
+
+    .modal-btn {
+        flex: 1;
+        padding: 12px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-cancel {
+        background-color: #f1f3f5;
+        color: #495057;
+    }
+    .btn-cancel:hover { background-color: #e9ecef; }
+
+    .btn-confirm {
+        background-color: #ffc107; /* Kuning Warning */
+        color: #212529;
+        box-shadow: 0 4px 10px rgba(255, 193, 7, 0.3);
+    }
+    .btn-confirm:hover { 
+        background-color: #e0a800; 
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(255, 193, 7, 0.4);
+    }
   </style>
 </head>
 <body>
@@ -387,6 +480,10 @@
         <h5 id="table-title" class="mb-0 text-secondary">Data Arsip</h5>
         
         <div id="export-buttons-container" style="display: none;">
+            <button class="btn btn-sm btn-warning me-1" onclick="refreshArsipData()" title="Hapus Cache & Ambil Data Terbaru">
+                <i class="fas fa-sync-alt"></i> Refresh Data
+            </button>
+            
             <button class="btn btn-sm btn-success me-1" onclick="exportArsipCurrentView('excel')" title="Download Excel">
                 <i class="fas fa-file-excel"></i> Excel
             </button>
@@ -426,6 +523,22 @@
                 </li>
             </ul>
         </nav>
+    </div>
+  </div>
+
+  <div id="custom-confirm-modal" class="custom-modal-overlay">
+    <div class="custom-modal-box">
+      <div class="modal-icon-header">
+        <i class="fas fa-exclamation-triangle"></i>
+      </div>
+      <div class="modal-content-body">
+        <h4 id="modal-title">Konfirmasi</h4>
+        <p id="modal-message">Pesan konfirmasi akan muncul di sini.</p>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn btn-cancel" onclick="closeCustomModal()">Batal</button>
+        <button class="modal-btn btn-confirm" id="btn-modal-confirm">Ya, Lanjutkan</button>
+      </div>
     </div>
   </div>
 
@@ -558,20 +671,19 @@
      l.style.display = show ? 'flex' : 'none';
   }
 
-  // --- DATA LOADING ---
-  function loadYears() {
-    // --- PERBAIKAN: HAPUS LOCAL STORAGE CACHE ---
-    // Jangan ambil dari LSCache, langsung minta ke server
-    // agar jika ada arsip baru, langsung muncul di dropdown.
-    
+  // --- UPDATE DATA LOADING (Support Callback) ---
+  function loadYears(callback) {
     console.log("Memuat daftar tahun terbaru dari server...");
     
     google.script.run.withSuccessHandler(res => {
        if (res.success) {
-          // Kita tidak perlu menyimpan ke LSCache lagi untuk Years
           populateYearDropdowns(res.years);
+          // Jalankan callback jika ada (misal: untuk restore pilihan tahun)
+          if (callback && typeof callback === 'function') {
+              callback();
+          }
        }
-    }).withFailureHandler(err => handleServerError(err, loadYears))
+    }).withFailureHandler(err => handleServerError(err, () => loadYears(callback)))
       .getArsipYears(currentArsipDbId);
   }
 
@@ -1082,6 +1194,137 @@
       document.getElementById('btn-prev').parentElement.classList.toggle('disabled', currentPage===1);
       document.getElementById('btn-next').parentElement.classList.toggle('disabled', currentPage>=maxPage);
   }
+
+  // --- VARIABLE GLOBAL UNTUK CALLBACK MODAL ---
+  let onConfirmAction = null;
+
+  // --- HELPER: BUKA MODAL ---
+  function showCustomConfirm(title, message, callback) {
+      document.getElementById('modal-title').innerText = title;
+      document.getElementById('modal-message').innerHTML = message; // Pakai innerHTML biar bisa bold
+      
+      // Simpan fungsi yang akan dijalankan jika user klik OK
+      onConfirmAction = callback;
+      
+      // Tampilkan Modal
+      const modal = document.getElementById('custom-confirm-modal');
+      modal.style.display = 'flex';
+      // Trigger reflow untuk animasi CSS
+      void modal.offsetWidth;
+      modal.classList.add('show');
+  }
+
+  // --- HELPER: TUTUP MODAL ---
+  function closeCustomModal() {
+      const modal = document.getElementById('custom-confirm-modal');
+      modal.classList.remove('show');
+      setTimeout(() => {
+          modal.style.display = 'none';
+          onConfirmAction = null; // Reset callback
+      }, 300); // Sesuaikan dengan durasi transisi CSS
+  }
+
+  // --- LISTENER TOMBOL OK PADA MODAL ---
+  document.getElementById('btn-modal-confirm').addEventListener('click', function() {
+      if (onConfirmAction) {
+          onConfirmAction(); // Jalankan fungsi yang disimpan
+      }
+      closeCustomModal();
+  });
+
+  // --- FUNGSI PEMICU (YANG DIKLIK USER) ---
+  function refreshArsipData() {
+      const title = "Ambil Data Terbaru?";
+      const message = "Tindakan ini akan <strong>menghapus cache</strong> dan mengambil data terbaru dari server.<br><br>Layar akan dibersihkan setelah proses selesai.";
+      
+      // Panggil modal, dan berikan fungsi 'executeRefresh' sebagai callback
+      showCustomConfirm(title, message, executeRefresh);
+  }
+
+  // --- FUNGSI EKSEKUSI UTAMA (DIPERBARUI: Restore Tahun) ---
+  function executeRefresh() {
+      // 1. SIMPAN STATUS SAAT INI SEBELUM RESET
+      const selectedYearBefore = document.getElementById('select-year').value;
+      const currentMode = document.getElementById('select-mode').value;
+
+      showLoader(true, "Membersihkan Cache & Memuat Ulang...");
+
+      // 2. Bersihkan Cache Lokal (Browser)
+      try {
+          Object.keys(localStorage).forEach(key => {
+              if (key.startsWith('ARSIP_V1_')) {
+                  localStorage.removeItem(key);
+              }
+          });
+          console.log("Cache lokal dibersihkan.");
+      } catch (e) {
+          console.warn("Gagal membersihkan localStorage:", e);
+      }
+
+      // 3. Panggil Server (Bersihkan Cache Server)
+      if (currentArsipDbId) {
+          google.script.run
+              .withSuccessHandler((res) => {
+                  if (res.success) {
+                      console.log("Cache server dibersihkan.");
+                      
+                      // 4. Muat Ulang Daftar Tahun dengan Callback
+                      loadYears(() => {
+                          // --- LOGIKA RESTORE TAHUN ---
+                          // Callback ini berjalan SETELAH dropdown tahun terisi ulang
+                          
+                          const select = document.getElementById('select-year');
+                          let yearRestored = false;
+
+                          // Cek apakah tahun yang tadi dipilih masih ada di daftar baru?
+                          if (selectedYearBefore) {
+                              // Cari opsi yang value-nya sama
+                              for (let i = 0; i < select.options.length; i++) {
+                                  if (select.options[i].value === selectedYearBefore) {
+                                      select.selectedIndex = i; // Pilih kembali
+                                      yearRestored = true;
+                                      break;
+                                  }
+                              }
+                          }
+
+                          if (yearRestored && currentMode === 'single') {
+                              // JIKA TAHUN KEMBALI & MODE SINGLE:
+                              // Langsung muat data tabel untuk tahun tersebut (akan ambil data fresh)
+                              console.log("Memuat ulang data tabel untuk tahun: " + selectedYearBefore);
+                              
+                              // Update teks loader agar user tahu kita sedang lanjut mengambil data
+                              document.getElementById('loader-text').innerText = "Mengunduh data terbaru...";
+                              
+                              loadTableData(selectedYearBefore); 
+                              // Note: loadTableData akan mematikan loader (showLoader(false)) saat selesai
+                          } else {
+                              // JIKA TIDAK ADA TAHUN SEBELUMNYA / TAHUN HILANG:
+                              // Reset ke tampilan kosong
+                              clearTable(); 
+                              document.getElementById('export-buttons-container').style.display = 'none';
+                              if (!yearRestored) select.value = ""; 
+                              
+                              showLoader(false); // Matikan loader manual
+                          }
+                      });
+                      
+                  } else {
+                      showLoader(false);
+                      alert("Gagal: " + res.message);
+                  }
+              })
+              .withFailureHandler((err) => {
+                  showLoader(false);
+                  alert("Koneksi Error: " + err.message);
+              })
+              .clearApp3ServerCache(currentArsipDbId);
+      } else {
+          showLoader(false);
+          location.reload();
+      }
+  }
+
 </script>
 
 </body>

@@ -935,3 +935,34 @@ function getMapelLegend(arsipDbId) {
     return {};
   }
 }
+
+/**
+ * [BARU] Membersihkan cache server untuk Arsip tertentu.
+ * Menghapus cache DATA dan DROPDOWN agar data terbaru bisa dimuat.
+ */
+function clearApp3ServerCache(arsipDbId) {
+  try {
+    const ss = SpreadsheetApp.openById(arsipDbId);
+    const sheets = ss.getSheets();
+    const cache = CacheService.getScriptCache();
+    const keysToRemove = [];
+
+    // Loop semua sheet untuk menebak kunci cache yang mungkin ada
+    sheets.forEach(s => {
+      const name = s.getName();
+      // Format kunci sesuai dengan fungsi getArsipData dan getArsipDropdownData
+      keysToRemove.push("DATA_" + arsipDbId + "_" + name);
+      keysToRemove.push("DROPDOWN_" + arsipDbId + "_" + name);
+    });
+    
+    // Catatan: Cache RANGE sulit ditebak karena kombinasi parameter, 
+    // tapi biasanya user merefresh data Single (Per Tahun) dulu.
+    
+    // Hapus kunci yang ditemukan (maks 1000 karakter per panggilan, tapi array aman)
+    cache.removeAll(keysToRemove);
+
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
